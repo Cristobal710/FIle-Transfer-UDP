@@ -1,23 +1,26 @@
 import socket
 import threading
 import queue
-UDP_IP = "127.0.0.1"
-UDP_PORT = 5005
-TUPLA_DIR = (UDP_IP, UDP_PORT)
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from Constants import *
+from Protocol.Archive import ArchiveRecv
 
-
-def manage_client(channel: queue.Queue):
-    print("mandando desde uno nuevo")
+def manage_client(channel: queue.Queue, addr, socket: socket):
+    name = channel.get(block=True)
+    name = name.decode()
+    path = f"/home/cristobal/Escritorio/pruebas/{name}" 
+    arch = ArchiveRecv(path)
+    
     while True:
-        msg = channel.get(block=True)
-        print(msg)
-        if (msg == "END"):
-            break
-    print("Me cerre")
-
+        pkg = channel.get(block=True)
+        arch.recv_pckg(pkg) 
         
+        if (pkg == "END"):
+            break
 
-
+        socket.sendto(ACK.encode(), addr)
 
 class Server:
     def __init__(self, udp_ip, udp_port, path):
@@ -28,29 +31,26 @@ class Server:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((udp_ip, udp_port))
 
-    #Escucha mensajes. Si recibe un nuevo cliente lo agrega al mapa de clientes sino deriva el mensaje a su thread.
-    def listen(self):
+    # Listens for messages. If it receives a new client, it adds it to the clients map; 
+    # otherwise, it forwards the message to the client's thread.    def listen(self):
         while True:
-            msg, addr = self.sock.recvfrom(1024) 
-            msg = msg.decode()
+            pkg, addr = self.sock.recvfrom(1024) 
             if (addr in self.clients): 
-                self.clients[addr][0].put(msg) 
-                if (msg == "END"):
+                self.clients[addr][0].put(pkg) 
+                if (pkg == "END"):
                     self.clients[addr][1].join()
                     del self.clients[addr]
             else:
-                self.start_client(msg, addr)
+                self.start_client(pkg, addr)
 
-    #Inicializa un thread que maneja un cliente, enviandole un canal para comunicacion entre thread y proceso principal
+    #Start a thread that encapsulates the client with a channel for comunication
     def start_client(self, msg, addr):
         chan = queue.Queue()
-        t = threading.Thread(target = manage_client, args = (chan, ))
+        t = threading.Thread(target = manage_client, args = (chan, addr, self.sock))
         t.start()
         self.clients[addr] = [chan, t]
         chan.put(msg)
     
-
-
 if __name__ == "__main__":
 
     server = Server(UDP_IP, UDP_PORT, "hola")
