@@ -4,13 +4,13 @@ import queue
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from Constants import *
-from Protocol.Archive import ArchiveRecv
+from constants import *
+from protocol.archive import ArchiveRecv
 
 def manage_client(channel: queue.Queue, addr, socket: socket):
     name = channel.get(block=True)
     name = name.decode()
-    path = f"/home/cristobal/Escritorio/pruebas/{name}" 
+    path = f"storage/{name}"
     arch = ArchiveRecv(path)
     
     while True:

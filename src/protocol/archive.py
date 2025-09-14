@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from Constants import *
+from constants import *
 
 class ArchiveSender:
     def __init__(self, path, ):
@@ -20,6 +20,7 @@ class ArchiveSender:
 
 class ArchiveRecv:
     def __init__(self, path, ):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         self.archivo = open(path, "wb+")
 
     def recv_pckg(self, msg):
