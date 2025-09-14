@@ -2,8 +2,8 @@ import socket
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from Constants import *
-from Protocol.Archive import ArchiveSender
+from constants import *
+from protocol.archive import ArchiveSender
 
 if __name__ == "__main__":
     
