@@ -13,14 +13,16 @@ def manage_client(channel: queue.Queue, addr, socket: socket):
     path = f"storage/{name}"
     arch = ArchiveRecv(path)
     
-    while True:
+    work_done = False
+    while (not work_done):
         pkg = channel.get(block=True)
         arch.recv_pckg(pkg) 
         
-        if (pkg == "END"):
-            break
+        if (pkg == END.encode()):
+            work_done = True
 
         socket.sendto(ACK.encode(), addr)
+    
 
 class Server:
     def __init__(self, udp_ip, udp_port, path):
@@ -30,14 +32,15 @@ class Server:
         self.clients = {}
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((udp_ip, udp_port))
-
+    
+    def _listen(self):
     # Listens for messages. If it receives a new client, it adds it to the clients map; 
     # otherwise, it forwards the message to the client's thread.    def listen(self):
         while True:
             pkg, addr = self.sock.recvfrom(1024) 
             if (addr in self.clients): 
                 self.clients[addr][0].put(pkg) 
-                if (pkg == "END"):
+                if (pkg == END.encode()):
                     self.clients[addr][1].join()
                     del self.clients[addr]
             else:
@@ -54,4 +57,4 @@ class Server:
 if __name__ == "__main__":
 
     server = Server(UDP_IP, UDP_PORT, "hola")
-    server.listen()
+    server._listen()
