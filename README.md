@@ -7,4 +7,5 @@ Trabajo Practico realizado para la Universidad de Buenos Aires, facultad de Inge
 Para correr el programa:
 
 primero correr en una terminal python3 server.py para levantar el servidor y ponerse a escuchar paquetes.
+
 luego en cualquier otra terminal correr python3 client.py 
