@@ -3,13 +3,14 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from constants import *
-from protocol.archive import ArchiveSender
+from protocol.archive import ArchiveSender, ArchiveRecv
 
-def upload_file(sock, end):
+def upload_file(sock: socket, end):
     name = input("Nombre del archivo: ")
     path = input("Path: ")
     arch = ArchiveSender(path) 
-        
+    
+    sock.sendto(UPLOAD.encode(), TUPLA_DIR_ENVIO) #send type of conexion to server
     sock.sendto(name.encode(), TUPLA_DIR_ENVIO) #send file name
 
     while (not end):
@@ -28,3 +29,23 @@ def upload_file(sock, end):
                 ack_recv = True
             except socket.timeout:
                 sock.sendto(pkg, TUPLA_DIR_ENVIO)    
+
+def download_file(sock: socket, end):
+    name = input("Nombre del archivo: ")
+    path = input("Path to save file: ")
+
+    sock.sendto(DOWNLOAD.encode(), TUPLA_DIR_ENVIO) #send type of conexion to server
+    sock.sendto(name.encode(), TUPLA_DIR_ENVIO) #send file name to server
+
+    arch = ArchiveRecv(path)
+    
+    work_done = False
+    while (not work_done):
+        pkg, addr = sock.recvfrom(1024)
+        
+        arch.recv_pckg(pkg) 
+        
+        if (pkg == END.encode()):
+            work_done = True
+
+        sock.sendto(ACK.encode(), addr)
