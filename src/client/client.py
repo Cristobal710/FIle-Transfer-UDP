@@ -11,5 +11,10 @@ if __name__ == "__main__":
     sock.bind(TUPLA_DIR_CLIENT)
     end = False
     #while (not end):
-    upload_file(sock, end)    
+    type_conexion = input("Elegir Upload o Download (Escribir U o D para elegir): ")
+    if (type_conexion == 'D'):
+        download_file(sock,end)
+    elif (type_conexion == 'U'):
+        upload_file(sock, end)    
+    
     sock.close()

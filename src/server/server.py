@@ -5,23 +5,48 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from constants import *
-from protocol.archive import ArchiveRecv
+from protocol.archive import ArchiveRecv, ArchiveSender
 
-def manage_client(channel: queue.Queue, addr, socket: socket):
-    name = channel.get(block=True)
-    name = name.decode()
-    path = f"storage/{name}"
-    arch = ArchiveRecv(path)
-    
-    work_done = False
-    while (not work_done):
-        pkg = channel.get(block=True)
-        arch.recv_pckg(pkg) 
+def manage_client(channel: queue.Queue, addr, sock: socket):
+    conexion_type = channel.get(block=True)
+
+    if (conexion_type == UPLOAD.encode()):
+
+        name = channel.get(block=True)
+        name = name.decode()
+        path = f"storage/{name}"
+        arch = ArchiveRecv(path)
         
-        if (pkg == END.encode()):
-            work_done = True
+        work_done = False
+        while (not work_done):
+            pkg = channel.get(block=True)
+            arch.recv_pckg(pkg) 
+            
+            if (pkg == END.encode()):
+                work_done = True
 
-        socket.sendto(ACK.encode(), addr)
+            sock.sendto(ACK.encode(), addr)
+    
+    elif (conexion_type == DOWNLOAD.encode()):
+        name = channel.get(block=True)
+        name = name.decode()
+        path = f"storage/{name}"
+        arch = ArchiveSender(path) 
+        end = False
+        while (not end):
+            pkg = arch.next_pkg()
+            if (pkg == None):
+                pkg = END.encode()
+                end = True
+            
+            sock.sendto(pkg, addr)
+            ack_recv = False
+            while (not ack_recv):
+                try:
+                    pkg = channel.get(block=True, timeout=0.2)
+                    ack_recv = True
+                except queue.Empty:
+                    sock.sendto(pkg, addr)
     
 
 class Server:
