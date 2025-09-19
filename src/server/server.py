@@ -8,24 +8,41 @@ from constants import *
 from protocol.archive import ArchiveRecv, ArchiveSender
 
 def manage_client(channel: queue.Queue, addr, sock: socket):
+
     conexion_type = channel.get(block=True)
 
-    if (conexion_type == UPLOAD.encode()):
+    sock.sendto(ACK.encode(), addr)
+    name = channel.get(block=True)
 
+    while (name == conexion_type): #entonces el ACK se perdio, reenviamos 
+        sock.sendto(ACK.encode(), addr)
         name = channel.get(block=True)
-        name = name.decode()
+    
+    name = name.decode()
+    pkg = channel.get(block=True)
+
+    while(name == pkg): #nuevamente, el ACK no llego, tenemos que reenviarlo
+        sock.sendto(ACK.encode(), addr)
+        pkg = channel.get(block=True)
+
+    if (conexion_type == UPLOAD.encode()):
         path = f"storage/{name}"
         arch = ArchiveRecv(path)
         
         work_done = False
         while (not work_done):
-            pkg = channel.get(block=True)
-            arch.recv_pckg(pkg) 
+            pkg_new = channel.get(block=True)
             
-            if (pkg == END.encode()):
+            if (pkg != pkg_new):
+                arch.recv_pckg(pkg_new)
+                pkg = pkg_new 
+            
+            elif (pkg == END.encode()):
                 work_done = True
-
             sock.sendto(ACK.encode(), addr)
+
+
+            
     
     elif (conexion_type == DOWNLOAD.encode()):
         name = channel.get(block=True)
@@ -56,7 +73,8 @@ class Server:
         #self.dir_path = path
         self.clients = {}
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind((udp_ip, udp_port))
+        self.sock.bind(TUPLA_DIR)
+        print(TUPLA_DIR)
     
     def _listen(self):
     # Listens for messages. If it receives a new client, it adds it to the clients map; 

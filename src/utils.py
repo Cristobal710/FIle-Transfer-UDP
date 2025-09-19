@@ -11,7 +11,30 @@ def upload_file(sock: socket, end):
     arch = ArchiveSender(path) 
     
     sock.sendto(UPLOAD.encode(), TUPLA_DIR_ENVIO) #send type of conexion to server
+    
+    ack_recv = False
+    while (not ack_recv):
+        sock.settimeout(0.1) #wait 100 miliseconds to recieve ACK
+        try:
+            pkg, addr = sock.recvfrom(1024)
+            print(pkg.decode())
+            ack_recv = True
+        except socket.timeout:
+            print("timeout, no recibi ACK")
+            sock.sendto(UPLOAD.encode(), TUPLA_DIR_ENVIO)    
+    
+
     sock.sendto(name.encode(), TUPLA_DIR_ENVIO) #send file name
+    ack_recv = False
+    while (not ack_recv):
+        sock.settimeout(0.3) #wait 100 miliseconds to recieve ACK
+        try:
+            pkg, addr = sock.recvfrom(1024)
+            print(pkg.decode())
+            ack_recv = True
+        except socket.timeout:
+            print("timeout, no recibi ACK")
+            sock.sendto(name.encode(), TUPLA_DIR_ENVIO) #send file name
 
     while (not end):
         pkg = arch.next_pkg()
