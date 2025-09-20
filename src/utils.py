@@ -8,36 +8,27 @@ from constants import (
 )
 from protocol.archive import ArchiveSender, ArchiveRecv
 
+def stop_and_wait(sock: socket, msg, addr):
+    sock.sendto(msg, addr)
+    ack_recv = False
+    while not ack_recv:
+        sock.settimeout(ACK_TIMEOUT)
+        try:
+            pkg, addr = sock.recvfrom(1024)
+            print(pkg.decode())
+            ack_recv = True
+        except socket.timeout:
+            print("timeout, no recibi ACK")
+            sock.sendto(msg, addr)
 
 def upload_file(sock: socket, end):
     name = input("Nombre del archivo: ")
     path = input("Path: ")
     arch = ArchiveSender(path)
 
-    sock.sendto(UPLOAD.encode(), TUPLA_DIR_ENVIO)  # send type of conexion to server
 
-    ack_recv = False
-    while not ack_recv:
-        sock.settimeout(ACK_TIMEOUT)  # wait 100 miliseconds to recieve ACK
-        try:
-            pkg, addr = sock.recvfrom(1024)
-            print(pkg.decode())
-            ack_recv = True
-        except socket.timeout:
-            print("timeout, no recibi ACK")
-            sock.sendto(UPLOAD.encode(), TUPLA_DIR_ENVIO)
-
-    sock.sendto(name.encode(), TUPLA_DIR_ENVIO)  # send file name
-    ack_recv = False
-    while not ack_recv:
-        sock.settimeout(ACK_TIMEOUT)  # wait 100 miliseconds to recieve ACK
-        try:
-            pkg, addr = sock.recvfrom(1024)
-            print(pkg.decode())
-            ack_recv = True
-        except socket.timeout:
-            print("timeout, no recibi ACK")
-            sock.sendto(name.encode(), TUPLA_DIR_ENVIO)  # send file name
+    stop_and_wait(sock, UPLOAD.encode(), TUPLA_DIR_ENVIO) # send type of conexion to server
+    stop_and_wait(sock, name.encode(), TUPLA_DIR_ENVIO) # send file name to server
 
     while not end:
         pkg = arch.next_pkg()
@@ -45,17 +36,7 @@ def upload_file(sock: socket, end):
             pkg = END.encode()
             end = True
 
-        sock.sendto(pkg, TUPLA_DIR_ENVIO)
-        ack_recv = False
-        while not ack_recv:
-            sock.settimeout(ACK_TIMEOUT)  # wait 100 miliseconds to recieve ACK
-            try:
-                pkg, addr = sock.recvfrom(1024)
-                print(pkg.decode())
-                ack_recv = True
-            except socket.timeout:
-                sock.sendto(pkg, TUPLA_DIR_ENVIO)
-
+        stop_and_wait(sock, pkg, TUPLA_DIR_ENVIO)
 
 def download_file(sock: socket, end):
     name = input("Nombre del archivo: ")
