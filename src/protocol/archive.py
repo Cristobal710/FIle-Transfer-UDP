@@ -13,13 +13,14 @@ class ArchiveSender:
         self.archivo = open(path, "rb")
         self.last_byte_sent = 0
 
-    def next_pkg(self):
-        msg = self.archivo.read(SIZE_PKG)
-        if not msg:
+    def next_pkg(self, seq_num=0):
+        data = self.archivo.read(SIZE_PKG)
+        if not data:
             return None
 
-        header = SIZE_PKG.to_bytes(4, "big")  # + self.last_byte_sent.to_bytes(4, 'big')
-        pkg = header + msg
+        header = seq_num.to_bytes(1, "big")           
+        header += len(data).to_bytes(2, "big") 
+        pkg = header + data
         return pkg
 
 
@@ -32,7 +33,11 @@ class ArchiveRecv:
         self.archivo = open(path, "wb+")
 
     def recv_pckg(self, msg):
-        # sz_msg = int.from_bytes(msg[0:4], 'big')
-        pkg = msg[4:]
-        self.archivo.write(pkg)
+        seq_num = msg[0]
+        data_len = int.from_bytes(msg[1:3], "big") 
+        data = msg[3:3+data_len]
+
+        self.archivo.write(data)
         self.archivo.flush()
+
+        return seq_num, data_len
