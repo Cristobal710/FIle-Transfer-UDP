@@ -59,20 +59,29 @@ def manage_client(channel: queue.Queue, addr, sock: socket):
         name = name.decode()
         path = f"storage/{name}"
         arch = ArchiveSender(path)
+        
+        seq_num = 0
         end = False
+        
         while not end:
-            pkg = arch.next_pkg()
+            pkg = arch.next_pkg(seq_num)
             if pkg is None:
                 pkg = END.encode()
                 end = True
-
+           
             sock.sendto(pkg, addr)
+            print(f">>> Server: envió paquete con seq={seq_num} (len={len(pkg)})")
+
             ack_recv = False
             while not ack_recv:
                 try:
-                    pkg = channel.get(block=True, timeout=0.2)
-                    ack_recv = True
+                    ack = channel.get(block=True, timeout=0.2)
+                    if ack.decode() == f"ACK{seq_num}":
+                        print(f">>> Server: recibió {ack.decode()}")
+                        ack_recv = True
+                        seq_num = 1 - seq_num
                 except queue.Empty:
+                    print(f">>> Server: timeout esperando ACK{seq_num}, reenvío")
                     sock.sendto(pkg, addr)
 
 

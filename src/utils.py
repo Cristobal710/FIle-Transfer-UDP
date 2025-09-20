@@ -15,7 +15,6 @@ def stop_and_wait(sock: socket, msg, addr):
         sock.settimeout(ACK_TIMEOUT)
         try:
             pkg, addr = sock.recvfrom(1024)
-            print(pkg.decode())
             ack_recv = True
         except socket.timeout:
             print("timeout, no recibi ACK")
@@ -44,18 +43,34 @@ def download_file(sock: socket, end):
     name = input("Nombre del archivo: ")
     path = input("Path to save file: ")
 
-    sock.sendto(DOWNLOAD.encode(), TUPLA_DIR_ENVIO)  # send type of conexion to server
-    sock.sendto(name.encode(), TUPLA_DIR_ENVIO)  # send file name to server
-
+    stop_and_wait(sock, DOWNLOAD.encode(), TUPLA_DIR_ENVIO) # send type of conexion to server
+    stop_and_wait(sock, name.encode(), TUPLA_DIR_ENVIO) # send file name to server
     arch = ArchiveRecv(path)
 
+    seq_expected = 0
     work_done = False
+
     while not work_done:
         pkg, addr = sock.recvfrom(1024)
 
-        arch.recv_pckg(pkg)
-
         if pkg == END.encode():
+            print(">>> Cliente: transferencia finalizada.")
             work_done = True
+            sock.sendto(f"ACK{seq_expected}".encode(), addr)
+            arch.archivo.close()
+            break
 
-        sock.sendto(ACK.encode(), addr)
+        seq_num, data_len, data = arch.recv_pckg(pkg)
+        print(f">>> Cliente: recibí seq={seq_num}, esperado={seq_expected}, len={data_len}")
+
+
+        if seq_num == seq_expected:
+            arch.archivo.write(data)
+            arch.archivo.flush()
+            sock.sendto(f"ACK{seq_num}".encode(), addr)
+            print(f">>> Cliente: mando ACK{seq_num}")
+            seq_expected = 1 - seq_expected
+        else:
+            sock.sendto(f"ACK{1 - seq_expected}".encode(), addr)
+            print(f">>> Cliente: paquete duplicado, reenvío ACK{1 - seq_expected}")
+

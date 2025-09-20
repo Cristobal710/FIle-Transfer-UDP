@@ -30,14 +30,11 @@ class ArchiveRecv:
         path,
     ):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        self.archivo = open(path, "wb+")
+        self.archivo = open(path, "wb")
 
     def recv_pckg(self, msg):
         seq_num = msg[0]
         data_len = int.from_bytes(msg[1:3], "big") 
         data = msg[3:3+data_len]
 
-        self.archivo.write(data)
-        self.archivo.flush()
-
-        return seq_num, data_len
+        return seq_num, data_len, data
