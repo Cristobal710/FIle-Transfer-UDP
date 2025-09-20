@@ -4,7 +4,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from constants import (
-    UPLOAD, DOWNLOAD, TUPLA_DIR_ENVIO, END, ACK
+    UPLOAD, DOWNLOAD, TUPLA_DIR_ENVIO, END, ACK, ACK_TIMEOUT
 )
 from protocol.archive import ArchiveSender, ArchiveRecv
 
@@ -18,7 +18,7 @@ def upload_file(sock: socket, end):
 
     ack_recv = False
     while not ack_recv:
-        sock.settimeout(0.1)  # wait 100 miliseconds to recieve ACK
+        sock.settimeout(ACK_TIMEOUT)  # wait 100 miliseconds to recieve ACK
         try:
             pkg, addr = sock.recvfrom(1024)
             print(pkg.decode())
@@ -30,7 +30,7 @@ def upload_file(sock: socket, end):
     sock.sendto(name.encode(), TUPLA_DIR_ENVIO)  # send file name
     ack_recv = False
     while not ack_recv:
-        sock.settimeout(0.3)  # wait 100 miliseconds to recieve ACK
+        sock.settimeout(ACK_TIMEOUT)  # wait 100 miliseconds to recieve ACK
         try:
             pkg, addr = sock.recvfrom(1024)
             print(pkg.decode())
@@ -48,7 +48,7 @@ def upload_file(sock: socket, end):
         sock.sendto(pkg, TUPLA_DIR_ENVIO)
         ack_recv = False
         while not ack_recv:
-            sock.settimeout(0.1)  # wait 100 miliseconds to recieve ACK
+            sock.settimeout(ACK_TIMEOUT)  # wait 100 miliseconds to recieve ACK
             try:
                 pkg, addr = sock.recvfrom(1024)
                 print(pkg.decode())
