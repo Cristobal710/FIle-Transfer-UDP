@@ -14,7 +14,7 @@ from protocol.archive import ArchiveRecv, ArchiveSender
 def manage_client(channel: queue.Queue, addr, sock: socket):
     conexion_type = channel.get(block=True)
 
-    sock.sendto(ACK.encode(), addr)
+    sock.sendto(ACK.encode(), addr)  # ACK de conexion_type
     name = channel.get(block=True)
 
     while name == conexion_type:  # entonces el ACK se perdio, reenviamos
@@ -32,17 +32,27 @@ def manage_client(channel: queue.Queue, addr, sock: socket):
         path = f"storage/{name}"
         arch = ArchiveRecv(path)
 
+        seq_expected = 0
         work_done = False
         while not work_done:
-            pkg_new = channel.get(block=True)
+            pkg = channel.get(block=True)
 
-            if pkg != pkg_new:
-                arch.recv_pckg(pkg_new)
-                pkg = pkg_new
-
-            elif pkg == END.encode():
+            if pkg == END.encode():
                 work_done = True
-            sock.sendto(ACK.encode(), addr)
+                sock.sendto(f"ACK{seq_expected}".encode(), addr)
+                break
+            
+            seq_num = pkg[0]
+            data_len = int.from_bytes(pkg[1:3], "big")
+            data = pkg[3:3+data_len]
+
+            if seq_num == seq_expected: #es el esperado, lo escribo
+                arch.archivo.write(data)
+                arch.archivo.flush()
+                sock.sendto(f"ACK{seq_num}".encode(), addr)
+                seq_expected = 1 - seq_expected  # alterno
+            else: # Duplicado, reenvío ACK del último válido, pero ya lo procesé
+                sock.sendto(f"ACK{1 - seq_expected}".encode(), addr)
 
     elif conexion_type == DOWNLOAD.encode():
         name = channel.get(block=True)

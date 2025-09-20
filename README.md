@@ -17,3 +17,5 @@ luego en cualquier otra terminal correr python3 client.py
 - Se levantan dos terminales, una en un nodo h1 con IP 10.0.0.1 y la otra con un cliente en el nodo h2 con IP 10.0.0.2
 - Upload -> OK
 - Download -> WIP
+
+```mininet > h1 tc qdisc add dev h1-eth0 root netem loss 20%``` -> fuerza que se pierdan el 20% de los paquetes que envía h1

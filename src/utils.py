@@ -30,13 +30,15 @@ def upload_file(sock: socket, end):
     stop_and_wait(sock, UPLOAD.encode(), TUPLA_DIR_ENVIO) # send type of conexion to server
     stop_and_wait(sock, name.encode(), TUPLA_DIR_ENVIO) # send file name to server
 
+    seq_num = 0
     while not end:
-        pkg = arch.next_pkg()
+        pkg = arch.next_pkg(seq_num)
         if pkg is None:
             pkg = END.encode()
             end = True
 
         stop_and_wait(sock, pkg, TUPLA_DIR_ENVIO)
+        seq_num = 1 - seq_num  # 0 o 1
 
 def download_file(sock: socket, end):
     name = input("Nombre del archivo: ")
