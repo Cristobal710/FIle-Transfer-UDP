@@ -4,7 +4,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from constants import (
-    UPLOAD, DOWNLOAD, TUPLA_DIR_ENVIO, END, ACK, ACK_TIMEOUT
+    UPLOAD, DOWNLOAD, TUPLA_DIR_ENVIO, END, ACK, ACK_TIMEOUT, PROTOCOLO, STOP_AND_WAIT, GO_BACK_N
 )
 from protocol.archive import ArchiveSender, ArchiveRecv
 
@@ -20,15 +20,7 @@ def stop_and_wait(sock: socket, msg, addr):
             print("timeout, no recibi ACK")
             sock.sendto(msg, addr)
 
-def upload_file(sock: socket, end):
-    name = input("Nombre del archivo: ")
-    path = input("Path: ")
-    arch = ArchiveSender(path)
-
-
-    stop_and_wait(sock, UPLOAD.encode(), TUPLA_DIR_ENVIO) # send type of conexion to server
-    stop_and_wait(sock, name.encode(), TUPLA_DIR_ENVIO) # send file name to server
-
+def upload_stop_and_wait(sock: socket, arch: ArchiveSender, end):
     seq_num = 0
     while not end:
         pkg = arch.next_pkg(seq_num)
@@ -39,14 +31,20 @@ def upload_file(sock: socket, end):
         stop_and_wait(sock, pkg, TUPLA_DIR_ENVIO)
         seq_num = 1 - seq_num  # 0 o 1
 
-def download_file(sock: socket, end):
+def upload_file(sock: socket, end, protocolo=PROTOCOLO):
     name = input("Nombre del archivo: ")
-    path = input("Path to save file: ")
+    path = input("Path: ")
 
-    stop_and_wait(sock, DOWNLOAD.encode(), TUPLA_DIR_ENVIO) # send type of conexion to server
+    stop_and_wait(sock, UPLOAD.encode(), TUPLA_DIR_ENVIO) # send type of conexion to server
     stop_and_wait(sock, name.encode(), TUPLA_DIR_ENVIO) # send file name to server
-    arch = ArchiveRecv(path)
+    arch = ArchiveSender(path)
 
+    if protocolo == STOP_AND_WAIT:
+        upload_stop_and_wait(sock, arch, end)
+    #elif protocolo == GO_BACK_N:
+    #    upload_go_back_n(sock, arch, end, window_size=4)
+
+def download_stop_and_wait(sock: socket, arch: ArchiveRecv, end):
     seq_expected = 0
     work_done = False
 
@@ -74,3 +72,18 @@ def download_file(sock: socket, end):
             sock.sendto(f"ACK{1 - seq_expected}".encode(), addr)
             print(f">>> Cliente: paquete duplicado, reenvío ACK{1 - seq_expected}")
 
+
+def download_file(sock: socket, end, protocolo=PROTOCOLO):
+    name = input("Nombre del archivo: ")
+    path = input("Path to save file: ")
+
+    stop_and_wait(sock, DOWNLOAD.encode(), TUPLA_DIR_ENVIO) # send type of conexion to server
+    stop_and_wait(sock, name.encode(), TUPLA_DIR_ENVIO) # send file name to server
+    arch = ArchiveRecv(path)
+
+    if protocolo == STOP_AND_WAIT:
+        download_stop_and_wait(sock, arch, end)
+    #elif protocolo == GO_BACK_N:
+    #    download_go_back_n(sock, arch, end, window_size=4)
+
+    
