@@ -1,14 +1,13 @@
 import socket
 import sys
 import os
-import queue
-import threading
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from constants import (
     UPLOAD, DOWNLOAD, TUPLA_DIR_ENVIO, END, ACK, ACK_TIMEOUT, PROTOCOLO, STOP_AND_WAIT, GO_BACK_N
 )
 from protocol.archive import ArchiveSender, ArchiveRecv
+from protocol.protocol import handshake
 
 
 
@@ -50,6 +49,7 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz):
                 end = True
             sock.sendto(pkg, TUPLA_DIR_ENVIO)
             pkgs_not_ack[pkg_id] = pkg
+            
         print("termine de enviar los paquetes, tengo que esperar ACK")
         sock.settimeout(ACK_TIMEOUT)
         try:
@@ -72,8 +72,7 @@ def upload_file(sock: socket, end, protocolo=PROTOCOLO):
     name = input("Nombre del archivo: ")
     path = input("Path: ")
 
-    stop_and_wait(sock, UPLOAD.encode(), TUPLA_DIR_ENVIO) # send type of conexion to server
-    stop_and_wait(sock, name.encode(), TUPLA_DIR_ENVIO) # send file name to server
+    handshake(sock, name, UPLOAD)
     arch = ArchiveSender(path)
 
     if protocolo == STOP_AND_WAIT:
@@ -114,8 +113,7 @@ def download_file(sock: socket, end, protocolo=PROTOCOLO):
     name = input("Nombre del archivo: ")
     path = input("Path to save file: ")
 
-    stop_and_wait(sock, DOWNLOAD.encode(), TUPLA_DIR_ENVIO) # send type of conexion to server
-    stop_and_wait(sock, name.encode(), TUPLA_DIR_ENVIO) # send file name to server
+    handshake(sock, name, DOWNLOAD)
     arch = ArchiveRecv(path)
 
     if protocolo == STOP_AND_WAIT:
