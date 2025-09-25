@@ -11,6 +11,57 @@ from constants import (
 from protocol.archive import ArchiveRecv, ArchiveSender
 
 
+def upload_from_client(name, channel: queue.Queue, sock: socket, addr):
+    path = f"storage/{name}"
+    arch = ArchiveRecv(path)
+    seq_expected = 0
+    work_done = False
+    while not work_done:
+        pkg = channel.get(block=True)
+        if pkg == END.encode():
+            work_done = True
+            sock.sendto(f"ACK{seq_expected}".encode(), addr)
+            break
+        
+        #podemos modularizar esto para que se haga en un metodo, es tratado de pkg
+        seq_num = pkg[0]
+        data_len = int.from_bytes(pkg[1:3], "big")
+        data = pkg[3:3+data_len]
+        if seq_num == seq_expected: #es el esperado, lo escribo
+            arch.archivo.write(data)
+            arch.archivo.flush()
+            sock.sendto(f"ACK{seq_num}".encode(), addr)
+            seq_expected = 1 - seq_expected  # alterno
+        else: # Duplicado, reenvío ACK del último válido, pero ya lo procesé
+            sock.sendto(f"ACK{1 - seq_expected}".encode(), addr)
+
+
+def upload_from_client_go_back_n(name, channel, sock, addr):
+    path = f"storage/{name}"
+    arch = ArchiveRecv(path)
+    seq_expected = 0
+    work_done = False
+    pkg_id = 0
+    while not work_done:
+        pkg = channel.get(block=True)
+        if pkg == END.encode():
+            work_done = True
+            sock.sendto(f"ACK{seq_expected}".encode(), addr)
+            break
+        
+        #podemos modularizar esto para que se haga en un metodo, es tratado de pkg
+        seq_num, data_len, pkg_new_id, data =  arch.recv_pckg_go_back_n(pkg)
+
+        if pkg_id != pkg_new_id: #es el esperado, lo escribo
+            arch.archivo.write(data)
+            arch.archivo.flush()
+            print(f"sendind this pkg_id to client: {pkg_id}")
+            sock.sendto(pkg_id.to_bytes(4, "big"), addr)
+            pkg_id = pkg_new_id
+        else: # Duplicado, reenvío ACK del último válido, pero ya lo procesé
+            sock.sendto(pkg_id.to_bytes(4, "big"), addr)
+
+
 def manage_client(channel: queue.Queue, addr, sock: socket):
     conexion_type = channel.get(block=True)
 
@@ -29,30 +80,33 @@ def manage_client(channel: queue.Queue, addr, sock: socket):
         pkg = channel.get(block=True)
 
     if conexion_type == UPLOAD.encode():
-        path = f"storage/{name}"
-        arch = ArchiveRecv(path)
+        #upload_from_client(name, channel, sock, addr)
+        upload_from_client_go_back_n(name, channel, sock, addr)
+    #     path = f"storage/{name}"
+    #     arch = ArchiveRecv(path)
 
-        seq_expected = 0
-        work_done = False
-        while not work_done:
-            pkg = channel.get(block=True)
+    #     seq_expected = 0
+    #     work_done = False
+    #     while not work_done:
+    #         pkg = channel.get(block=True)
 
-            if pkg == END.encode():
-                work_done = True
-                sock.sendto(f"ACK{seq_expected}".encode(), addr)
-                break
+    #         if pkg == END.encode():
+    #             work_done = True
+    #             sock.sendto(f"ACK{seq_expected}".encode(), addr)
+    #             break
             
-            seq_num = pkg[0]
-            data_len = int.from_bytes(pkg[1:3], "big")
-            data = pkg[3:3+data_len]
+    #         #podemos modularizar esto para que se haga en un metodo, es tratado de pkg
+    #         seq_num = pkg[0]
+    #         data_len = int.from_bytes(pkg[1:3], "big")
+    #         data = pkg[3:3+data_len]
 
-            if seq_num == seq_expected: #es el esperado, lo escribo
-                arch.archivo.write(data)
-                arch.archivo.flush()
-                sock.sendto(f"ACK{seq_num}".encode(), addr)
-                seq_expected = 1 - seq_expected  # alterno
-            else: # Duplicado, reenvío ACK del último válido, pero ya lo procesé
-                sock.sendto(f"ACK{1 - seq_expected}".encode(), addr)
+    #         if seq_num == seq_expected: #es el esperado, lo escribo
+    #             arch.archivo.write(data)
+    #             arch.archivo.flush()
+    #             sock.sendto(f"ACK{seq_num}".encode(), addr)
+    #             seq_expected = 1 - seq_expected  # alterno
+    #         else: # Duplicado, reenvío ACK del último válido, pero ya lo procesé
+    #             sock.sendto(f"ACK{1 - seq_expected}".encode(), addr)
 
     elif conexion_type == DOWNLOAD.encode():
         name = channel.get(block=True)
