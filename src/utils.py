@@ -1,12 +1,16 @@
 import socket
 import sys
 import os
+import queue
+import threading
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from constants import (
     UPLOAD, DOWNLOAD, TUPLA_DIR_ENVIO, END, ACK, ACK_TIMEOUT, PROTOCOLO, STOP_AND_WAIT, GO_BACK_N
 )
 from protocol.archive import ArchiveSender, ArchiveRecv
+
+
 
 def stop_and_wait(sock: socket, msg, addr):
     sock.sendto(msg, addr)
@@ -31,6 +35,39 @@ def upload_stop_and_wait(sock: socket, arch: ArchiveSender, end):
         stop_and_wait(sock, pkg, TUPLA_DIR_ENVIO)
         seq_num = 1 - seq_num  # 0 o 1
 
+
+
+def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz):
+    seq_num = 0
+    pkgs_not_ack = {}
+
+    
+    while not end:
+        while(len(pkgs_not_ack) != window_sz and not end):
+            pkg, pkg_id = arch.next_pkg_go_back_n(seq_num)
+            if pkg is None:
+                pkg = END.encode()
+                end = True
+            sock.sendto(pkg, TUPLA_DIR_ENVIO)
+            pkgs_not_ack[pkg_id] = pkg
+        print("termine de enviar los paquetes, tengo que esperar ACK")
+        sock.settimeout(ACK_TIMEOUT)
+        try:
+            pkg, addr = sock.recvfrom(1024)
+            print(f"recibi el ACK del paquete: {pkg}")
+            if (pkg in pkgs_not_ack.keys()):
+                del pkgs_not_ack[pkg]
+
+        except socket.timeout:
+            print("timeout, no recibi ACKs, reenvio los n paquetes")
+            for value in pkgs_not_ack.values():
+                sock.sendto(value, addr)
+        
+        
+
+        
+
+
 def upload_file(sock: socket, end, protocolo=PROTOCOLO):
     name = input("Nombre del archivo: ")
     path = input("Path: ")
@@ -41,8 +78,8 @@ def upload_file(sock: socket, end, protocolo=PROTOCOLO):
 
     if protocolo == STOP_AND_WAIT:
         upload_stop_and_wait(sock, arch, end)
-    #elif protocolo == GO_BACK_N:
-    #    upload_go_back_n(sock, arch, end, window_size=4)
+    elif protocolo == GO_BACK_N:
+        upload_go_back_n(sock, arch, end, window_sz=4)
 
 def download_stop_and_wait(sock: socket, arch: ArchiveRecv, end):
     seq_expected = 0
