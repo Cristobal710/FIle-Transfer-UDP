@@ -3,16 +3,21 @@ import threading
 import queue
 import sys
 import os
+import argparse
+import logging
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from constants import (
     UPLOAD, DOWNLOAD, TUPLA_DIR, UDP_IP, UDP_PORT, PROTOCOLO, STOP_AND_WAIT, GO_BACK_N, WINDOW_SIZE
 )
 from protocol.archive import ArchiveRecv, ArchiveSender
+from protocol.utils import setup_logging, create_server_parser
 
 
 def upload_from_client(name, channel: queue.Queue, sock: socket, addr):
-    path = f"src/server/storage/{name}"
+    # Usar path absoluto
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(current_dir, "storage", name)
     arch = ArchiveRecv(path)
     seq_expected = 0
     work_done = False
@@ -25,7 +30,7 @@ def upload_from_client(name, channel: queue.Queue, sock: socket, addr):
             work_done = True
             sock.sendto((seq_expected % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
             break
-            
+        
         if seq_num == seq_expected: 
             arch.archivo.write(data)
             arch.archivo.flush()
@@ -39,12 +44,20 @@ def download_from_client_stop_and_wait(name, sock, addr, channel=None):
     """
     Stop and Wait Download - Servidor envía archivo al cliente
     """
-    path = f"src/server/storage/{name}"
+    # Usar path absoluto
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(current_dir, "storage", name)
+    print(f">>> Server: buscando archivo en: {path}")
+    print(f">>> Server: directorio actual: {os.getcwd()}")
     if not os.path.exists(path):
         print(f">>> Server: archivo no encontrado: {path}")
         return
     print(f">>> Server: archivo encontrado, empezando envío con Stop and Wait...")
-    arch = ArchiveSender(path)
+    try:
+        arch = ArchiveSender(path)
+    except Exception as e:
+        print(f">>> Server: Error al abrir archivo: {e}")
+        return
     
     seq_num = 0
     end = False
@@ -83,7 +96,9 @@ def download_from_client_go_back_n(name, sock, addr):
     Envía archivo al cliente usando Go Back N.
     Utiliza una ventana deslizante para enviar n paquetes y luego esperar ACKs.
     """
-    path = f"src/server/storage/{name}"
+    # Usar path absoluto
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(current_dir, "storage", name)
     if not os.path.exists(path):
         print(f">>> Server: archivo no encontrado: {path}")
         return
@@ -139,18 +154,20 @@ def download_from_client_go_back_n(name, sock, addr):
                 for value in pkgs_not_ack.values():
                     sock.sendto(value, addr)
         except ConnectionResetError:
-            print(">>> Server: Conexión reseteada durante download")
-            return
+                print(">>> Server: Conexión reseteada durante download")
+                return
         except Exception as e:
-            print(f">>> Server: Error durante download: {e}")
-            return
+                print(f">>> Server: Error durante download: {e}")
+                return
 
 def upload_from_client_go_back_n(name, channel, sock, addr):
     """
     Recibe archivo del cliente usando Go Back N.
     Funciona como stop and wait desde el lado del servidor.
     """
-    path = f"src/server/storage/{name}"
+    # Usar path absoluto
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(current_dir, "storage", name)
     arch = ArchiveRecv(path)
     seq_expected = 0
     work_done = False
@@ -165,7 +182,7 @@ def upload_from_client_go_back_n(name, channel, sock, addr):
             sock.sendto((seq_expected % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
             break
         print(f">>> Server: recibí paquete flag_end={flag_end}, pkg_id={pkg_id}, pkg_id_mod={pkg_id % 256}, esperado={seq_expected}, esperado_mod={seq_expected % 256}")
-
+        
         if pkg_id % 256 == seq_expected % 256:
             arch.archivo.write(data)
             arch.archivo.flush()
@@ -184,27 +201,37 @@ def manage_client(channel: queue.Queue, addr, sock: socket):
         conexion_type = channel.get(block=True)
 
         sock.sendto((1).to_bytes(1, "big"), addr)  # ACK de conexion_type
+        protocol = channel.get(block=True)
+
+        while protocol == conexion_type:  # entonces el ACK se perdio, reenviamos
+            sock.sendto((1).to_bytes(1, "big"), addr)
+            protocol = channel.get(block=True)
+
+        sock.sendto((1).to_bytes(1, "big"), addr)  # ACK de protocol
         name = channel.get(block=True)
 
-        while name == conexion_type:  # entonces el ACK se perdio, reenviamos
+        while name == protocol:  # entonces el ACK se perdio, reenviamos
             sock.sendto((1).to_bytes(1, "big"), addr)
             name = channel.get(block=True)
 
         name = name.decode()
+        protocol = protocol.decode()
         pkg = channel.get(block=True)
 
         while name == pkg:  # nuevamente, el ACK no llego, tenemos que reenviarlo
             sock.sendto((1).to_bytes(1, "big"), addr)
             pkg = channel.get(block=True)
 
+        print(f">>> Server: conexion_type={conexion_type.decode()}, protocol={protocol}, name={name}")
+
         if conexion_type == UPLOAD.encode():
             # Enviar ACK del nombre del archivo
             sock.sendto((1).to_bytes(1, "big"), addr)
             print(f">>> Server: envié ACK del nombre del archivo: {name}")
             
-            if PROTOCOLO == STOP_AND_WAIT:
+            if protocol == STOP_AND_WAIT:
                 upload_from_client(name, channel, sock, addr)
-            elif PROTOCOLO == GO_BACK_N:
+            elif protocol == GO_BACK_N:
                 upload_from_client_go_back_n(name, channel, sock, addr)
 
         elif conexion_type == DOWNLOAD.encode():
@@ -212,9 +239,9 @@ def manage_client(channel: queue.Queue, addr, sock: socket):
             sock.sendto((1).to_bytes(1, "big"), addr)
             print(f">>> Server: envié ACK del nombre del archivo: {name}")
             
-            if PROTOCOLO == STOP_AND_WAIT:
+            if protocol == STOP_AND_WAIT:
                 download_from_client_stop_and_wait(name, sock, addr, channel)
-            elif PROTOCOLO == GO_BACK_N:
+            elif protocol == GO_BACK_N:
                 download_from_client_go_back_n(name, sock, addr)
     except Exception as e:
         print(f">>> Server: Error en manage_client: {e}")
@@ -227,8 +254,8 @@ class Server:
         self.udp_port = udp_port
         self.clients = {}
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(TUPLA_DIR)
-        print(TUPLA_DIR)
+        self.sock.bind((udp_ip, udp_port))
+        print(f"Server bound to {udp_ip}:{udp_port}")
 
     def _listen(self):
         while True:
@@ -255,6 +282,62 @@ class Server:
         chan.put(msg)
 
 
+class ServerInterface:
+    def __init__(self):
+        self.logger = setup_logging('file_transfer_server')
+        self.server = None
+            
+    def start_server(self, args):
+        try:
+            self.logger = setup_logging('file_transfer_server', args.verbose, args.quiet)
+            
+            self.logger.info(f"Starting server on {args.host}:{args.port}")
+            self.logger.debug(f"Storage path: {args.storage}")
+            
+            # Crear directorio de almacenamiento si no existe
+            os.makedirs(args.storage, exist_ok=True)
+            
+            # Crear servidor
+            self.server = Server(args.host, args.port, args.storage)
+            
+            self.logger.info("Server started successfully. Press Ctrl+C to stop.")
+            self.logger.info("Waiting for connections...")
+            
+            # Iniciar servidor
+            self.server._listen()
+            
+        except KeyboardInterrupt:
+            self.logger.info("Server stopped by user")
+        except Exception as e:
+            self.logger.error(f"Server error: {e}")
+            sys.exit(1)
+        finally:
+            if self.server and self.server.sock:
+                self.server.sock.close()
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("File Transfer Server")
+        print("Usage: python server.py start-server [options]")
+        print("Use -h for help with options")
+        sys.exit(1)
+        
+    command = sys.argv[1]
+    sys.argv = sys.argv[1:]
+    
+    interface = ServerInterface()
+    
+    if command == 'start-server':
+        parser = create_server_parser()
+        args = parser.parse_args()
+        interface.start_server(args)
+        
+    else:
+        print(f"Unknown command: {command}")
+        print("Available commands: start-server")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    server = Server(UDP_IP, UDP_PORT, "hola")
-    server._listen()
+    main()
