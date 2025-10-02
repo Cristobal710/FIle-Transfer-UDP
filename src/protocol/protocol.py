@@ -1,6 +1,6 @@
 import socket
 from protocol.archive import ArchiveSender, ArchiveRecv
-from constants import END, ACK_TIMEOUT, TUPLA_DIR_ENVIO, WINDOW_SIZE
+from constants import ACK_TIMEOUT, TUPLA_DIR_ENVIO, WINDOW_SIZE
 
 def handshake(sock: socket, name: str, type: str):
     """
@@ -104,10 +104,10 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz):
                 # Crear paquete END con flag_end = 1
                 first_byte = 1  # flag_end = 1 para END
                 pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (0).to_bytes(4, "big")  # data_len = 0, pkg_id = 0
-                pkg_id = b"END"
+                pkg_id = (0).to_bytes(4, "big")  # pkg_id = 0 para END
                 file_finished = True
             sock.sendto(pkg, TUPLA_DIR_ENVIO)
-            if pkg_id != b"END":
+            if pkg_id != (0).to_bytes(4, "big"):
                 pkgs_not_ack[pkg_id] = pkg
             seq_num += 1
         

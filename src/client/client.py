@@ -43,11 +43,10 @@ if __name__ == "__main__":
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(TUPLA_DIR_CLIENT)
     end = False
-    while (not end):
-        type_conexion = input("Elegir Upload o Download (Escribir U o D para elegir): ")
-        if type_conexion == "D":
-            download_file(sock, end, protocolo=PROTOCOLO)
-        elif type_conexion == "U":
-            upload_file(sock, end, protocolo=PROTOCOLO)
+    type_conexion = input("Elegir Upload o Download (Escribir U o D para elegir): ")
+    if type_conexion == "D":
+        download_file(sock, end, protocolo=PROTOCOLO)
+    elif type_conexion == "U":
+        upload_file(sock, end, protocolo=PROTOCOLO)
 
     sock.close()

@@ -6,7 +6,7 @@ import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from constants import (
-    ACK, UPLOAD, DOWNLOAD, END, TUPLA_DIR, UDP_IP, UDP_PORT, PROTOCOLO, STOP_AND_WAIT, GO_BACK_N, WINDOW_SIZE
+    UPLOAD, DOWNLOAD, TUPLA_DIR, UDP_IP, UDP_PORT, PROTOCOLO, STOP_AND_WAIT, GO_BACK_N, WINDOW_SIZE
 )
 from protocol.archive import ArchiveRecv, ArchiveSender
 
@@ -19,23 +19,20 @@ def upload_from_client(name, channel: queue.Queue, sock: socket, addr):
     while not work_done:
         pkg = channel.get(block=True)
         
-        # Verificar si es paquete END
-        if len(pkg) >= 1:
-            first_byte = pkg[0]
-            flag_end = first_byte & 1
-            if flag_end == 1:
-                work_done = True
-                sock.sendto((seq_expected % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
-                break
-        
         seq_num, flag_end, data_len, data = arch.recv_pckg(pkg)
+        
+        if flag_end == 1:
+            work_done = True
+            sock.sendto((seq_expected % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            break
+            
         if seq_num == seq_expected: 
             arch.archivo.write(data)
             arch.archivo.flush()
-            sock.sendto(seq_num.to_bytes(1, "big"), addr)  # ACK de 1 bit
+            sock.sendto((seq_num % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
             seq_expected = 1 - seq_expected 
         else: # Duplicado, reenvío ACK del último válido
-            sock.sendto((1 - seq_expected).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            sock.sendto(((1 - seq_expected) % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
 
 
 def download_from_client_stop_and_wait(name, sock, addr, channel=None):
@@ -106,11 +103,11 @@ def download_from_client_go_back_n(name, sock, addr):
                 # Crear paquete END con flag_end = 1
                 first_byte = 1  # flag_end = 1 para END
                 pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (0).to_bytes(4, "big")  # data_len = 0, pkg_id = 0
-                pkg_id = b"END"
+                pkg_id = (0).to_bytes(4, "big")  # pkg_id = 0 para END
                 file_finished = True
             sock.sendto(pkg, addr)
-            print(f">>> Server: envió paquete con flag_end={pkg[0] & 1}, pkg_id={int.from_bytes(pkg_id, 'big') if pkg_id != b'END' else 'END'} (len={len(pkg)})")
-            if pkg_id != b"END":
+            print(f">>> Server: envió paquete con flag_end={pkg[0] & 1}, pkg_id={int.from_bytes(pkg_id, 'big')} (len={len(pkg)})")
+            if pkg_id != (0).to_bytes(4, "big"):
                 pkgs_not_ack[pkg_id] = pkg
             seq_num += 1
         
@@ -161,16 +158,12 @@ def upload_from_client_go_back_n(name, channel, sock, addr):
     while not work_done:
         pkg = channel.get(block=True)
         
-        # Verificar si es paquete END
-        if len(pkg) >= 1:
-            first_byte = pkg[0]
-            flag_end = first_byte & 1
-            if flag_end == 1:
-                work_done = True
-                sock.sendto((seq_expected % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
-                break
-        
         flag_end, data_len, pkg_id, data = arch.recv_pckg_go_back_n(pkg)
+        
+        if flag_end == 1:
+            work_done = True
+            sock.sendto((seq_expected % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            break
         print(f">>> Server: recibí paquete flag_end={flag_end}, pkg_id={pkg_id}, pkg_id_mod={pkg_id % 256}, esperado={seq_expected}, esperado_mod={seq_expected % 256}")
 
         if pkg_id % 256 == seq_expected % 256:
@@ -243,9 +236,6 @@ class Server:
                 pkg, addr = self.sock.recvfrom(1024)
                 if addr in self.clients:
                     self.clients[addr][0].put(pkg)
-                    if pkg == END.encode():
-                        self.clients[addr][1].join()
-                        del self.clients[addr]
                 else:
                     self.start_client(pkg, addr)
             except ConnectionResetError:
