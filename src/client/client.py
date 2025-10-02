@@ -1,53 +1,168 @@
 import sys
 import os
-import socket
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from constants import TUPLA_DIR_CLIENT, PROTOCOLO, DOWNLOAD, STOP_AND_WAIT, UPLOAD, GO_BACK_N, WINDOW_SIZE
+from constants import UPLOAD, DOWNLOAD, WINDOW_SIZE
+from protocol.archive import ArchiveSender, ArchiveRecv
 from protocol.protocol import handshake, download_stop_and_wait, upload_stop_and_wait, upload_go_back_n, download_go_back_n
-from protocol.archive import ArchiveRecv, ArchiveSender
+from protocol.utils import (
+    setup_logging, validate_file_path, validate_protocol, 
+    setup_client_socket, create_upload_parser, create_download_parser
+)
 
-def download_file(sock: socket, end, protocolo=PROTOCOLO):
-    """
-    Descarga un archivo desde el servidor usando el protocolo especificado.
-    Solicita al usuario el nombre del archivo y la ruta donde guardarlo.
-    """
-    name = input("Nombre del archivo: ")
-    path = input("Path to save file: ")
 
-    handshake(sock, name, DOWNLOAD)
-    arch = ArchiveRecv(path)
+class FileTransferInterface:
+    def __init__(self):
+        self.logger = setup_logging('file_transfer')
+        self.sock = None
+        
+    def _setup_socket(self, host, port):
+        if self.sock:
+            self.sock.close()
+            
+        self.sock, self.target_addr = setup_client_socket(host, port)
+        self.logger.debug(f"Socket bound to {self.sock.getsockname()}")
+        self.logger.debug(f"Target server: {host}:{port}")
+        
+    def upload_file(self, args):
+        try:
+            self.logger = setup_logging('file_transfer', args.verbose, args.quiet)
+            self._setup_socket(args.host, args.port)
+            
+            source_path = validate_file_path(args.src)
+            protocol = validate_protocol(args.protocol)
+            
+            self.logger.info(f"Starting upload: {source_path} -> {args.name}")
+            self.logger.debug(f"Protocol: {protocol}")
+            
+            # Crear dirección del servidor
+            server_addr = (args.host, args.port)
+            
+            # Handshake
+            handshake(self.sock, args.name, UPLOAD, protocol, server_addr)
+            
+            # Crear archivo sender
+            arch = ArchiveSender(source_path)
+            end = False
+            
+            # Usar el protocolo especificado
+            if protocol == "SW":
+                upload_stop_and_wait(self.sock, arch, end, server_addr)
+            elif protocol == "GBN":
+                upload_go_back_n(self.sock, arch, end, WINDOW_SIZE, server_addr)
+                
+            self.logger.info("Upload completed successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Upload failed: {e}")
+            sys.exit(1)
+        finally:
+            if self.sock:
+                self.sock.close()
+                
+    def download_file(self, args):
+        try:
+            self.logger = setup_logging('file_transfer', args.verbose, args.quiet)
+            self._setup_socket(args.host, args.port)
+            
+            protocol = validate_protocol(args.protocol)
+            
+            self.logger.info(f"Starting download: {args.name} -> {args.dst}")
+            self.logger.debug(f"Protocol: {protocol}")
+            
+            # Crear dirección del servidor
+            server_addr = (args.host, args.port)
+            
+            # Handshake
+            handshake(self.sock, args.name, DOWNLOAD, protocol, server_addr)
+            
+            # Crear archivo receiver
+            arch = ArchiveRecv(args.dst)
+            end = False
+            
+            # Usar el protocolo especificado
+            if protocol == "SW":
+                download_stop_and_wait(self.sock, arch, end, server_addr)
+            elif protocol == "GBN":
+                download_go_back_n(self.sock, arch, end, server_addr, WINDOW_SIZE)
+                    
+            self.logger.info("Download completed successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Download failed: {e}")
+            sys.exit(1)
+        finally:
+            if self.sock:
+                self.sock.close()
 
-    if protocolo == STOP_AND_WAIT:
-        download_stop_and_wait(sock, arch, end)
-    elif protocolo == GO_BACK_N:
-        download_go_back_n(sock, arch, end, window_sz=WINDOW_SIZE)
 
-def upload_file(sock: socket, end, protocolo=PROTOCOLO):
-    """
-    Sube un archivo al servidor usando el protocolo especificado.
-    Solicita al usuario el nombre del archivo y la ruta del archivo a subir.
-    """
-    name = input("Nombre del archivo: ")
-    path = input("Path: ")
 
-    handshake(sock, name, UPLOAD)
-    arch = ArchiveSender(path)
 
-    if protocolo == STOP_AND_WAIT:
-        upload_stop_and_wait(sock, arch, end)
-    elif protocolo == GO_BACK_N:
-        upload_go_back_n(sock, arch, end, window_sz=WINDOW_SIZE)
+def main():
+    if len(sys.argv) < 2:
+        print("File Transfer Client")
+        print("Available commands: upload, download")
+        print("Use -h for help with each command")
+        print()
+        
+        interface = FileTransferInterface()
+        
+        while True:
+            try:
+                command_input = input("Enter command (or 'quit' to exit): ").strip().split()
+                
+                if not command_input or command_input[0] == 'quit':
+                    print("Goodbye!")
+                    break
+                    
+                command = command_input[0]
+                
+                if command == 'upload':
+                    parser = create_upload_parser()
+                    try:
+                        args = parser.parse_args(command_input[1:])
+                        interface.upload_file(args)
+                    except SystemExit:
+                        pass
+                        
+                elif command == 'download':
+                    parser = create_download_parser()
+                    try:
+                        args = parser.parse_args(command_input[1:])
+                        interface.download_file(args)
+                    except SystemExit:
+                        pass
+                        
+                else:
+                    print(f"Unknown command: {command}")
+                    print("Available commands: upload, download")
+                    
+            except KeyboardInterrupt:
+                print("\nGoodbye!")
+                break
+            except Exception as e:
+                print(f"Error: {e}")
+    else:
+        command = sys.argv[1]
+        sys.argv = sys.argv[1:]
+        
+        interface = FileTransferInterface()
+        
+        if command == 'upload':
+            parser = create_upload_parser()
+            args = parser.parse_args()
+            interface.upload_file(args)
+            
+        elif command == 'download':
+            parser = create_download_parser()
+            args = parser.parse_args()
+            interface.download_file(args)
+            
+        else:
+            print(f"Unknown command: {command}")
+            print("Available commands: upload, download")
+            sys.exit(1)
+
 
 if __name__ == "__main__":
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(TUPLA_DIR_CLIENT)
-    end = False
-    while (not end):
-        type_conexion = input("Elegir Upload o Download (Escribir U o D para elegir): ")
-        if type_conexion == "D":
-            download_file(sock, end, protocolo=PROTOCOLO)
-        elif type_conexion == "U":
-            upload_file(sock, end, protocolo=PROTOCOLO)
-
-    sock.close()
+    main()
