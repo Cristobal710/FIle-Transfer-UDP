@@ -100,7 +100,7 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
     while not end:
         # Fase 1: Enviar paquetes hasta llenar la ventana o terminar el archivo
         while(len(pkgs_not_ack) < window_sz and not file_finished):
-            pkg, pkg_id = arch.next_pkg_go_back_n(seq_num % 2)  # Usar solo 0 o 1 para seq_num
+            pkg, pkg_id = arch.next_pkg_go_back_n(seq_num)  # Usar seq_num completo
             if pkg is None:
                 # Crear paquete END con flag_end = 1
                 first_byte = 1  # flag_end = 1 para END
@@ -118,12 +118,12 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
         try:
             pkg, addr = sock.recvfrom(1024)
             print(f"recibi el ACK del paquete: {pkg}")
-            if len(pkg) == 1:
+            if len(pkg) == 4:
                 ack_num = int.from_bytes(pkg, "big")
                 to_remove = []
                 for pkg_id in pkgs_not_ack:
                     pkg_id_num = int.from_bytes(pkg_id, 'big')
-                    if pkg_id_num % 256 <= ack_num:
+                    if pkg_id_num <= ack_num:
                         to_remove.append(pkg_id)
                 for pkg_id in to_remove:
                     del pkgs_not_ack[pkg_id]
