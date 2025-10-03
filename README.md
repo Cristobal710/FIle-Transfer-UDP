@@ -21,13 +21,17 @@ luego en cualquier otra terminal correr python3 client.py
 ```mininet > h1 tc qdisc add dev h1-eth0 root netem loss 20%``` -> fuerza que se pierdan el 20% de los paquetes que envía h1
 
 # Upload with help
-python3 src/interface.py upload -h
+`python3 src/interface.py upload -h`
 
 # Upload a file
-python3 src/interface.py upload -s /path/to/file.pdf -n myfile.pdf -v
+`python3 src/interface.py upload -s /path/to/file.pdf -n myfile.pdf -v`
 
 # Upload with custom server
-python3 src/interface.py upload -H 192.168.1.100 -p 8080 -s test.txt -n uploaded.txt
+`python3 src/interface.py upload -H 192.168.1.100 -p 8080 -s test.txt -n uploaded.txt`
 
 # Download a file  
-python3 src/interface.py download -n myfile.pdf -d /downloads/received.pdf -v
+`python3 src/interface.py download -n myfile.pdf -d /downloads/received.pdf -v`
+
+# Download a file with GBN
+
+`python src/client/client.py download -n prueba.png -d ./test_synchronized.png -H 127.0.0.1 -p 5005 -r GBN -v`
