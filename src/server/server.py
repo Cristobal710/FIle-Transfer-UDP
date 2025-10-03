@@ -179,21 +179,19 @@ def upload_from_client_go_back_n(name, channel, sock, addr):
         
         if flag_end == 1:
             work_done = True
-            sock.sendto((seq_expected % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            sock.sendto(seq_expected.to_bytes(4, "big"), addr)  # ACK de 4 bytes
             break
-        print(f">>> Server: recibí paquete flag_end={flag_end}, pkg_id={pkg_id}, pkg_id_mod={pkg_id % 256}, esperado={seq_expected}, esperado_mod={seq_expected % 256}")
+        print(f">>> Server: recibí paquete flag_end={flag_end}, pkg_id={pkg_id}, esperado={seq_expected}")
         
-        if pkg_id % 256 == seq_expected % 256:
+        if pkg_id == seq_expected:
             arch.archivo.write(data)
             arch.archivo.flush()
-            ack_value = seq_expected % 256
-            sock.sendto(ack_value.to_bytes(1, "big"), addr)
-            print(f">>> Server: envié ACK{seq_expected % 256} (valor={ack_value})")
+            sock.sendto(seq_expected.to_bytes(4, "big"), addr)
+            print(f">>> Server: envié ACK{seq_expected}")
             seq_expected += 1
         else:
-            ack_to_send = (seq_expected - 1) % 256
-            sock.sendto(ack_to_send.to_bytes(1, "big"), addr)
-            print(f">>> Server: paquete fuera de orden, reenvío ACK{ack_to_send}")
+            sock.sendto((seq_expected - 1).to_bytes(4, "big"), addr)
+            print(f">>> Server: paquete fuera de orden, reenvío ACK{seq_expected - 1}")
 
 
 def manage_client(channel: queue.Queue, addr, sock: socket):
