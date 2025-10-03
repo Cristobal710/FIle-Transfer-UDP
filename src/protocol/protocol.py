@@ -138,7 +138,7 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
             else:
                 print("timeout, no recibi ACKs, reenvio los n paquetes")
                 for value in pkgs_not_ack.values():
-                    sock.sendto(value, addr)
+                    sock.sendto(value, server_addr)
 
 def download_go_back_n(sock: socket, arch: ArchiveRecv, end, server_addr, window_sz=WINDOW_SIZE):
     """
