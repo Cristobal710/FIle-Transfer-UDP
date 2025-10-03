@@ -113,12 +113,12 @@ def download_from_client_go_back_n(name, sock, addr):
     while not end:
         # Fase 1: Enviar paquetes hasta llenar la ventana o terminar el archivo
         while(len(pkgs_not_ack) < WINDOW_SIZE and not file_finished):
-            pkg, pkg_id = arch.next_pkg_go_back_n(seq_num % 2)  # Usar solo 0 o 1 para seq_num
+            pkg, pkg_id = arch.next_pkg_go_back_n(seq_num)  # Usar seq_num directamente
             if pkg is None:
                 # Crear paquete END con flag_end = 1
                 first_byte = 1  # flag_end = 1 para END
-                pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (0).to_bytes(4, "big")  # data_len = 0, pkg_id = 0
-                pkg_id = (0).to_bytes(4, "big")  # pkg_id = 0 para END
+                pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (seq_num).to_bytes(4, "big")  # data_len = 0, pkg_id = seq_num
+                pkg_id = (seq_num).to_bytes(4, "big")  # pkg_id = seq_num para END
                 file_finished = True
             sock.sendto(pkg, addr)
             print(f">>> Server: envió paquete con flag_end={pkg[0] & 1}, pkg_id={int.from_bytes(pkg_id, 'big')} (len={len(pkg)})")
@@ -132,12 +132,12 @@ def download_from_client_go_back_n(name, sock, addr):
         try:
             pkg, ack_addr = sock.recvfrom(1024)
             print(f">>> Server: recibí el ACK del paquete: {pkg}")
-            if len(pkg) == 1:
+            if len(pkg) == 4:
                 ack_num = int.from_bytes(pkg, "big")
                 to_remove = []
                 for pkg_id in pkgs_not_ack:
                     pkg_id_num = int.from_bytes(pkg_id, 'big')
-                    if pkg_id_num % 256 <= ack_num:
+                    if pkg_id_num <= ack_num:
                         to_remove.append(pkg_id)
                 for pkg_id in to_remove:
                     del pkgs_not_ack[pkg_id]
@@ -216,11 +216,6 @@ def manage_client(channel: queue.Queue, addr, sock: socket):
 
         name = name.decode()
         protocol = protocol.decode()
-        pkg = channel.get(block=True)
-
-        while name == pkg:  # nuevamente, el ACK no llego, tenemos que reenviarlo
-            sock.sendto((1).to_bytes(1, "big"), addr)
-            pkg = channel.get(block=True)
 
         print(f">>> Server: conexion_type={conexion_type.decode()}, protocol={protocol}, name={name}")
 
