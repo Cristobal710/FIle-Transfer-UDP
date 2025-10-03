@@ -56,7 +56,7 @@ class ArchiveSender:
         Formato: [flag_end:1bit][data_len:2bytes][pkg_id:4bytes][data:variable]
         
         Args:
-            seq_num: Número de secuencia (0 o 1) - no se usa en el header
+            seq_num: Número de secuencia del paquete
             
         Returns:
             tuple: (paquete, pkg_id) o (None, None) si no hay más datos
@@ -65,8 +65,7 @@ class ArchiveSender:
         if not data:
             return None, None
 
-        pkg_id = self.last_pkg_sent.to_bytes(4, "big")
-        self.last_pkg_sent += 1
+        pkg_id = seq_num.to_bytes(4, "big")
         
         # Crear header con flag_end en el primer byte
         first_byte = 0  # flag_end = 0 para datos normales
@@ -74,7 +73,7 @@ class ArchiveSender:
         header += len(data).to_bytes(2, "big")          # tamaño de datos
         header += pkg_id                                
         pkg = header + data
-        print(f"next_pkg_go_back_n: flag_end=0, last_pkg_sent={self.last_pkg_sent-1}, pkg_id={int.from_bytes(pkg_id, 'big')}")
+        print(f"next_pkg_go_back_n: flag_end=0, seq_num={seq_num}, pkg_id={int.from_bytes(pkg_id, 'big')}")
         return pkg, pkg_id
 
 

@@ -2,15 +2,16 @@ import socket
 from protocol.archive import ArchiveSender, ArchiveRecv
 from constants import ACK_TIMEOUT, TUPLA_DIR_ENVIO, WINDOW_SIZE
 
-def handshake(sock: socket, name: str, type: str):
+def handshake(sock: socket, name: str, type: str, protocol: str, server_addr):
     """
     Realiza el handshake inicial con el servidor.
-    Envía el tipo de conexión (UPLOAD o DOWNLOAD) y el nombre del archivo.
+    Envía el tipo de conexión (UPLOAD o DOWNLOAD), el protocolo (SW o GBN) y el nombre del archivo.
     """
-    stop_and_wait(sock, type.encode(), TUPLA_DIR_ENVIO)
-    stop_and_wait(sock, name.encode(), TUPLA_DIR_ENVIO)
+    stop_and_wait(sock, type.encode(), server_addr)
+    stop_and_wait(sock, protocol.encode(), server_addr)
+    stop_and_wait(sock, name.encode(), server_addr)
   
-def upload_stop_and_wait(sock: socket, arch: ArchiveSender, end):
+def upload_stop_and_wait(sock: socket, arch: ArchiveSender, end, server_addr):
     """
     Sube un archivo usando el protocolo Stop and Wait.
     Envía un paquete, espera ACK, y reenvía si no se recibe confirmación.
@@ -24,10 +25,10 @@ def upload_stop_and_wait(sock: socket, arch: ArchiveSender, end):
             pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big")  # data_len = 0
             end = True
 
-        stop_and_wait(sock, pkg, TUPLA_DIR_ENVIO)
+        stop_and_wait(sock, pkg, server_addr)
         seq_num = 1 - seq_num
 
-def download_stop_and_wait(sock: socket, arch: ArchiveRecv, end):
+def download_stop_and_wait(sock: socket, arch: ArchiveRecv, end, server_addr):
     """
     Descarga un archivo usando el protocolo Stop and Wait.
     Recibe paquetes del servidor y envía ACK de confirmación.
@@ -52,18 +53,18 @@ def download_stop_and_wait(sock: socket, arch: ArchiveRecv, end):
         if flag_end == 1:
             print(">>> Cliente: transferencia finalizada.")
             work_done = True
-            sock.sendto((seq_expected % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            sock.sendto(seq_expected.to_bytes(4, "big"), server_addr)  # ACK de 4 bytes
             arch.archivo.close()
             break
 
         if seq_num == seq_expected:
             arch.archivo.write(data)
             arch.archivo.flush()
-            sock.sendto((seq_num % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            sock.sendto((seq_num % 256).to_bytes(1, "big"), server_addr)  # ACK de 1 bit
             print(f">>> Cliente: mando ACK{seq_num}")
             seq_expected = 1 - seq_expected
         else:
-            sock.sendto((1 - seq_expected).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            sock.sendto((1 - seq_expected).to_bytes(1, "big"), server_addr)  # ACK de 1 bit
             print(f">>> Cliente: paquete duplicado, reenvío ACK{1 - seq_expected}")
 
 def stop_and_wait(sock: socket, msg, addr):
@@ -87,7 +88,7 @@ def stop_and_wait(sock: socket, msg, addr):
             print("timeout, no recibi ACK")
             sock.sendto(msg, addr)
 
-def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz):
+def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_addr):
     """
     Sube un archivo usando el protocolo Go Back N.
     Utiliza una ventana deslizante para enviar múltiples paquetes sin esperar confirmación.
@@ -106,7 +107,7 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz):
                 pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (0).to_bytes(4, "big")  # data_len = 0, pkg_id = 0
                 pkg_id = (0).to_bytes(4, "big")  # pkg_id = 0 para END
                 file_finished = True
-            sock.sendto(pkg, TUPLA_DIR_ENVIO)
+            sock.sendto(pkg, server_addr)
             if pkg_id != (0).to_bytes(4, "big"):
                 pkgs_not_ack[pkg_id] = pkg
             seq_num += 1
@@ -139,7 +140,7 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz):
                 for value in pkgs_not_ack.values():
                     sock.sendto(value, addr)
 
-def download_go_back_n(sock: socket, arch: ArchiveRecv, end, window_sz=WINDOW_SIZE):
+def download_go_back_n(sock: socket, arch: ArchiveRecv, end, server_addr, window_sz=WINDOW_SIZE):
     """
     Descarga un archivo usando el protocolo Go Back N.
     Funciona como stop and wait desde el lado del receptor.
@@ -164,18 +165,16 @@ def download_go_back_n(sock: socket, arch: ArchiveRecv, end, window_sz=WINDOW_SI
         if flag_end == 1:
             print(">>> Cliente: transferencia finalizada.")
             work_done = True
-            sock.sendto((seq_expected % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            sock.sendto(seq_expected.to_bytes(4, "big"), server_addr)  # ACK de 4 bytes
             arch.archivo.close()
             break
 
         if pkg_id == seq_expected:
             arch.archivo.write(data)
             arch.archivo.flush()
-            ack_value = seq_expected % 256 
-            sock.sendto((ack_value % 256).to_bytes(1, "big"), addr)
-            print(f">>> Cliente: mando ACK{seq_expected} (valor={ack_value})")
+            sock.sendto(seq_expected.to_bytes(4, "big"), server_addr)
+            print(f">>> Cliente: mando ACK{seq_expected}")
             seq_expected += 1
         else:
-            ack_to_send = (seq_expected - 1) % 256
-            sock.sendto((ack_to_send % 256).to_bytes(1, "big"), addr)
-            print(f">>> Cliente: paquete fuera de orden, reenvío ACK{ack_to_send}")
+            sock.sendto((seq_expected - 1).to_bytes(4, "big"), server_addr)
+            print(f">>> Cliente: paquete fuera de orden, reenvío ACK{seq_expected - 1}")
