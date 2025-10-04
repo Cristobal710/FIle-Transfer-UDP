@@ -35,3 +35,8 @@ luego en cualquier otra terminal correr python3 client.py
 # Download a file with GBN
 
 `python src/client/client.py download -n prueba.png -d ./test_synchronized.png -H 127.0.0.1 -p 5005 -r GBN -v`
+
+
+# Parametros Upload:
+ - GBN: 30 sec aproximado (WINDOW_SIZE = 10, TIMEOUT = 0.05)
+ - S&W: 1 min aproximado (WINDOW_SIZE = 1, TIMEOUT = 0.05)

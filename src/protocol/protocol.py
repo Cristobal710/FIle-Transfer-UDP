@@ -107,6 +107,7 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
                 pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (0).to_bytes(4, "big")  # data_len = 0, pkg_id = 0
                 pkg_id = (0).to_bytes(4, "big")  # pkg_id = 0 para END
                 file_finished = True
+                pkgs_not_ack[pkg_id] = pkg
             sock.sendto(pkg, server_addr)
             if pkg_id != (0).to_bytes(4, "big"):
                 pkgs_not_ack[pkg_id] = pkg

@@ -4,7 +4,7 @@ from mininet.node import Controller, OVSKernelSwitch
 from mininet.link import TCLink
 
 def start_network():
-    net = Mininet(controller=Controller, switch=OVSKernelSwitch)
+    net = Mininet(controller=Controller, switch=OVSKernelSwitch, link=TCLink)
 
     # Add controller with explicit executable
     net.addController("c0", controller=Controller, command="ovs-testcontroller")
@@ -27,7 +27,7 @@ def start_network():
 
     h1.cmd('xterm -hold -e "cd src/server; python3 server.py start-server -H 10.0.0.1 -p 5005; bash" &')
     h2.cmd('xterm -hold -e "cd src/client; python3 ' \
-    'client.py download -n prueba.png -d ./test_synchronized.png -r GBN -H 10.0.0.1 -p 5005  -r GBN -v; bash" &')
+    'client.py upload -s /home/cristobal/Escritorio/Redes/FIle-Transfer-UDP/test.png -n prueba.png -r GBN -H 10.0.0.1 -p 5005 -v; bash" &')
 
     CLI(net)
     h1.cmd("killall xterm")
