@@ -131,3 +131,7 @@ class ArchiveRecv:
         pkg_id = int.from_bytes(msg[3:7], "big")
         data = msg[7:7+data_len]
         return flag_end, data_len, pkg_id, data
+
+    def write_data(self, data):
+        self.archivo.write(data)
+        self.archivo.flush()
