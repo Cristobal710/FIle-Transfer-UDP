@@ -38,5 +38,9 @@ luego en cualquier otra terminal correr python3 client.py
 
 
 # Parametros Upload:
- - GBN: 30 sec aproximado (WINDOW_SIZE = 10, TIMEOUT = 0.05)
+ - GBN: 14 sec aproximado (WINDOW_SIZE = 10, TIMEOUT = 0.05) ((((CHEQUEAR NUEVAMENTE))))
  - S&W: 1 min aproximado (WINDOW_SIZE = 1, TIMEOUT = 0.05)
+
+# Parametros Download:
+ - GBN: 35 sec aproximado (WINDOW_SIZE = 10, TIMEOUT = 0.05)
+ - S&W: 1  min aproximado (WINDOW_SIZE = 1, TIMEOUT = 0.01)

@@ -8,7 +8,7 @@ import logging
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from constants import (
-    UPLOAD, DOWNLOAD, TUPLA_DIR, UDP_IP, UDP_PORT, PROTOCOLO, STOP_AND_WAIT, GO_BACK_N, WINDOW_SIZE, ACK_TIMEOUT
+    UPLOAD, DOWNLOAD, STOP_AND_WAIT, GO_BACK_N, ACK_TIMEOUT_SW, ACK_TIMEOUT_GBN, WINDOW_SIZE_GBN, WINDOW_SIZE_SW
 )
 from protocol.archive import ArchiveRecv, ArchiveSender
 from protocol.utils import setup_logging, create_server_parser
@@ -76,7 +76,7 @@ def download_from_client_stop_and_wait(name, sock, addr, channel=None):
         ack_recv = False
         while not ack_recv:
             try:
-                sock.settimeout(0.5)
+                sock.settimeout(ACK_TIMEOUT_SW)
                 ack_data, ack_addr = sock.recvfrom(1024)
                 if len(ack_data) == 1:  # ACK de 1 bit
                     ack_num = int.from_bytes(ack_data, "big")
@@ -91,7 +91,7 @@ def download_from_client_stop_and_wait(name, sock, addr, channel=None):
                 print(f">>> Server: timeout esperando ACK{seq_num}, reenvío")
                 sock.sendto(pkg, addr)
 
-def download_from_client_go_back_n(name, sock, addr):
+def download_from_client_go_back_n(name, sock, addr, window_sz, timeout):
     """
     Envía archivo al cliente usando Go Back N.
     Utiliza una ventana deslizante para enviar n paquetes y luego esperar ACKs.
@@ -112,7 +112,7 @@ def download_from_client_go_back_n(name, sock, addr):
     
     while not end:
         # Fase 1: Enviar paquetes hasta llenar la ventana o terminar el archivo
-        while(len(pkgs_not_ack) < WINDOW_SIZE and not file_finished):
+        while(len(pkgs_not_ack) < window_sz and not file_finished):
             pkg, pkg_id = arch.next_pkg_go_back_n(seq_num)  # Usar seq_num directamente
             if pkg is None:
                 # Crear paquete END con flag_end = 1
@@ -128,7 +128,7 @@ def download_from_client_go_back_n(name, sock, addr):
         
         # Fase 2: Esperar ACKs
         print(">>> Server: termine de enviar los paquetes, tengo que esperar ACK")
-        sock.settimeout(ACK_TIMEOUT)
+        sock.settimeout(timeout)
         try:
             pkg, ack_addr = sock.recvfrom(1024)
             print(f">>> Server: recibí el ACK del paquete: {pkg}")
@@ -233,9 +233,9 @@ def manage_client(channel: queue.Queue, addr, sock: socket):
             print(f">>> Server: envié ACK del nombre del archivo: {name}")
             
             if protocol == STOP_AND_WAIT:
-                download_from_client_stop_and_wait(name, sock, addr, channel)
+                download_from_client_go_back_n(name, sock, addr, WINDOW_SIZE_SW, ACK_TIMEOUT_SW)
             elif protocol == GO_BACK_N:
-                download_from_client_go_back_n(name, sock, addr)
+                download_from_client_go_back_n(name, sock, addr, WINDOW_SIZE_GBN, ACK_TIMEOUT_GBN)
     except Exception as e:
         print(f">>> Server: Error en manage_client: {e}")
         return
