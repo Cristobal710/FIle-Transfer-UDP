@@ -9,31 +9,67 @@ def start_network():
     # Add controller with explicit executable
     net.addController("c0", controller=Controller, command="ovs-testcontroller")
 
-    # Add hosts and switch
-    h1 = net.addHost("h1", ip="10.0.0.1", cwd="src/server")
-    h2 = net.addHost("h2", ip="10.0.0.2", cwd="src/client")
+    # Add hosts and switch (usar rutas absolutas)
+    import os
+    base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    
+    h1 = net.addHost("h1", ip="10.0.0.1")
+    h2 = net.addHost("h2", ip="10.0.0.2")
+    h3 = net.addHost("h3", ip="10.0.0.3")
+    h4 = net.addHost("h4", ip="10.0.0.4")
+    h5 = net.addHost("h5", ip="10.0.0.5")
     s1 = net.addSwitch("s1")
 
     net.addLink(h1, s1, loss= 10)
     net.addLink(h2, s1)
-
+    net.addLink(h3, s1)
+    net.addLink(h4, s1)
+    net.addLink(h5, s1)
     net.start()
 
+    # Crear directorio para archivos de wireshark si no existe
+    wireshark_dir = os.path.join(base_path, "wireshark_files")
+    if not os.path.exists(wireshark_dir):
+        os.makedirs(wireshark_dir)
+
     # Start tcpdump on server (h1)
-    tcpdump_h1 = h1.popen("tcpdump -i h1-eth0 udp -w wireshark_files/h1_capture.pcap")
+    tcpdump_h1 = h1.popen(f"tcpdump -i h1-eth0 udp -w {wireshark_dir}/h1_capture.pcap")
 
     # Start tcpdump on client (h2)
-    tcpdump_h2 = h2.popen("tcpdump -i h2-eth0 udp -w wireshark_files/h2_capture.pcap")
+    tcpdump_h2 = h2.popen(f"tcpdump -i h2-eth0 udp -w {wireshark_dir}/h2_capture.pcap")
 
-    h1.cmd('xterm -hold -e "cd src/server; python3 server.py start-server -H 10.0.0.1 -p 5005; bash" &')
-    h2.cmd('xterm -hold -e "cd src/client; python3 ' \
-    'client.py upload -s /home/cristobal/Escritorio/Redes/FIle-Transfer-UDP/test.png -n prueba.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
+    # Start tcpdump on client (h3)
+    tcpdump_h3 = h3.popen(f"tcpdump -i h3-eth0 udp -w {wireshark_dir}/h3_capture.pcap")
+    # Start tcpdump on client (h4)
+    tcpdump_h4 = h4.popen(f"tcpdump -i h4-eth0 udp -w {wireshark_dir}/h4_capture.pcap")
+    # Start tcpdump on client (h5)
+    tcpdump_h5 = h5.popen(f"tcpdump -i h5-eth0 udp -w {wireshark_dir}/h5_capture.pcap")
+
+    # Usar rutas absolutas para los comandos
+    server_path = os.path.join(base_path, "src", "server")
+    client_path = os.path.join(base_path, "src", "client")
+    
+    h1.cmd(f'xterm -hold -e "cd {server_path}; python3 server.py start-server -H 10.0.0.1 -p 5005; bash" &')
+    h2.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
+    f'client.py upload -s /home/lucas/redes/test.png -n uploadsw.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
+    h3.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
+    f'client.py upload -s /home/lucas/redes/test.png -n uploadgbn.png -r GBN -H 10.0.0.1 -p 5005 -v; bash" &')
+    h4.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
+    f'client.py download -d ./downloadsw.png -n test.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
+    h5.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
+    f'client.py download -d ./downloadgbn.png -n test.png -r GBN -H 10.0.0.1 -p 5005 -v; bash" &')
 
     CLI(net)
     h1.cmd("killall xterm")
     h2.cmd("killall xterm")
+    h3.cmd("killall xterm")
+    h4.cmd("killall xterm")
+    h5.cmd("killall xterm")
     tcpdump_h1.terminate()
     tcpdump_h2.terminate()
+    tcpdump_h3.terminate()
+    tcpdump_h4.terminate()
+    tcpdump_h5.terminate()
     net.stop()
 
 
