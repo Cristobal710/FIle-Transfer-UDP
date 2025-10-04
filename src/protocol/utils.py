@@ -10,6 +10,17 @@ import sys
 from constants import STOP_AND_WAIT, GO_BACK_N
 
 
+def find_free_port():
+    """
+    Encuentra el primer puerto libre disponible
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+    return port
+
+
 def setup_logging(name, verbose=False, quiet=False):
     """
     Configura el sistema de logging para el cliente o servidor
@@ -63,7 +74,9 @@ def setup_client_socket(host, port):
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     
-    client_port = 5006
+    # Encontrar el primer puerto libre disponible
+    client_port = find_free_port()
+    
     if host == "127.0.0.1" or host == "localhost":
         client_ip = "127.0.0.1"
     else:
