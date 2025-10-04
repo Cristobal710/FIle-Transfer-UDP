@@ -8,7 +8,7 @@ import logging
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from constants import (
-    UPLOAD, DOWNLOAD, TUPLA_DIR, UDP_IP, UDP_PORT, PROTOCOLO, STOP_AND_WAIT, GO_BACK_N, WINDOW_SIZE
+    UPLOAD, DOWNLOAD, TUPLA_DIR, UDP_IP, UDP_PORT, PROTOCOLO, STOP_AND_WAIT, GO_BACK_N, WINDOW_SIZE, ACK_TIMEOUT
 )
 from protocol.archive import ArchiveRecv, ArchiveSender
 from protocol.utils import setup_logging, create_server_parser
@@ -128,7 +128,7 @@ def download_from_client_go_back_n(name, sock, addr):
         
         # Fase 2: Esperar ACKs
         print(">>> Server: termine de enviar los paquetes, tengo que esperar ACK")
-        sock.settimeout(0.5)
+        sock.settimeout(ACK_TIMEOUT)
         try:
             pkg, ack_addr = sock.recvfrom(1024)
             print(f">>> Server: recibí el ACK del paquete: {pkg}")
@@ -270,9 +270,9 @@ class Server:
     def start_client(self, msg, addr):
         chan = queue.Queue()
         t = threading.Thread(target=manage_client, args=(chan, addr, self.sock))
-        t.start()
         self.clients[addr] = [chan, t]
         chan.put(msg)
+        t.start()
 
 
 class ServerInterface:
