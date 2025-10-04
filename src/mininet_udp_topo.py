@@ -1,7 +1,7 @@
 from mininet.net import Mininet
 from mininet.cli import CLI
 from mininet.node import Controller, OVSKernelSwitch
-
+from mininet.link import TCLink
 
 def start_network():
     net = Mininet(controller=Controller, switch=OVSKernelSwitch)
@@ -14,7 +14,7 @@ def start_network():
     h2 = net.addHost("h2", ip="10.0.0.2", cwd="src/client")
     s1 = net.addSwitch("s1")
 
-    net.addLink(h1, s1)
+    net.addLink(h1, s1, loss= 10)
     net.addLink(h2, s1)
 
     net.start()
@@ -25,8 +25,9 @@ def start_network():
     # Start tcpdump on client (h2)
     tcpdump_h2 = h2.popen("tcpdump -i h2-eth0 udp -w wireshark_files/h2_capture.pcap")
 
-    h1.cmd('xterm -hold -e "cd src/server; python3 server.py; bash" &')
-    h2.cmd('xterm -hold -e "cd src/client; python3 client.py; bash" &')
+    h1.cmd('xterm -hold -e "cd src/server; python3 server.py start-server -H 10.0.0.1 -p 5005; bash" &')
+    h2.cmd('xterm -hold -e "cd src/client; python3 ' \
+    'client.py download -n prueba.png -d ./test_synchronized.png -r GBN -H 10.0.0.1 -p 5005  -r GBN -v; bash" &')
 
     CLI(net)
     h1.cmd("killall xterm")
