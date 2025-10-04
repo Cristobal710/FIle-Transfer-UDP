@@ -255,7 +255,7 @@ class Server:
             try:
                 pkg, addr = self.sock.recvfrom(1024)
                 if addr in self.clients:
-                    self.clients[addr][0].put(pkg)
+                    self.clients[addr][0].put(pkg) 
                 else:
                     self.start_client(pkg, addr)
             except ConnectionResetError:
