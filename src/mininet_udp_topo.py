@@ -51,9 +51,9 @@ def start_network():
     
     h1.cmd(f'xterm -hold -e "cd {server_path}; python3 server.py start-server -H 10.0.0.1 -p 5005; bash" &')
     h2.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
-    f'client.py upload -s ./test_synchronized.png -n uploadsw.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
+    f'client.py upload -s /home/lucas/redes/test.png -n uploadsw.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
     h3.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
-    f'client.py upload -s ./test_synchronized.png -n uploadgbn.png -r GBN -H 10.0.0.1 -p 5005 -v; bash" &')
+    f'client.py upload -s /home/lucas/redes/test.png -n uploadgbn.png -r GBN -H 10.0.0.1 -p 5005 -v; bash" &')
     h4.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
     f'client.py download -d ./downloadsw.png -n test.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
     h5.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \

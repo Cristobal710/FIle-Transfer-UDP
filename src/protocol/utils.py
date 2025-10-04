@@ -80,7 +80,14 @@ def setup_client_socket(host, port):
     if host == "127.0.0.1" or host == "localhost":
         client_ip = "127.0.0.1"
     else:
-        client_ip = "10.0.0.2"
+        temp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            temp_sock.connect((host, port))
+            client_ip = temp_sock.getsockname()[0]
+        except:
+            client_ip = "0.0.0.0"
+        finally:
+            temp_sock.close()
     
     sock.bind((client_ip, client_port))
     return sock, (host, port)
