@@ -102,6 +102,48 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
                 for value in pkgs_not_ack.values():
                     sock.sendto(value, addr)
 
+def download_stop_and_wait(sock: socket, arch: ArchiveRecv, server_addr, timeout):
+    """
+    Descarga un archivo usando el protocolo Stop and Wait.
+    """
+    seq_expected = 0
+    work_done = False
+    print(">>> Cliente: empezando a recibir archivo con Stop and Wait...")
+
+    while not work_done:
+        try:
+            print(">>> Cliente: esperando paquete del servidor...")
+            sock.settimeout(timeout)
+            pkg, addr = sock.recvfrom(1024)
+            print(f">>> Cliente: recibí paquete de {len(pkg)} bytes")
+        except socket.timeout:
+            print(">>> Cliente: timeout esperando paquetes del servidor")
+            continue
+
+        seq_num, flag_end, data_len, data = arch.recv_pckg(pkg)
+        print(f">>> Cliente: recibí seq_num={seq_num}, flag_end={flag_end}, esperado={seq_expected}, len={data_len}")
+
+        if flag_end == 1:
+            print(">>> Cliente: transferencia finalizada.")
+            work_done = True
+            sock.sendto((seq_expected % 256).to_bytes(1, "big"), server_addr)  # ACK de 1 bit
+            break
+
+        if seq_num == seq_expected:
+            # Paquete en orden, procesar y enviar ACK
+            arch.write_data(data)
+            sock.sendto((seq_num % 256).to_bytes(1, "big"), server_addr)
+            print(f">>> Cliente: paquete en orden, envié ACK{seq_num}")
+            seq_expected = 1 - seq_expected
+        else:
+            # Paquete fuera de orden, enviar ACK del último paquete correcto
+            last_ack = (1 - seq_expected) % 256
+            sock.sendto(last_ack.to_bytes(1, "big"), server_addr)
+            print(f">>> Cliente: paquete fuera de orden (recibí {seq_num}, esperaba {seq_expected}), reenvío ACK{last_ack}")
+    
+    print(">>> Cliente: cerrando archivo...")
+    arch.archivo.close()
+
 def download_go_back_n(sock: socket, arch: ArchiveRecv, server_addr, timeout):
     """
     Descarga un archivo usando el protocolo Go Back N.
@@ -127,17 +169,25 @@ def download_go_back_n(sock: socket, arch: ArchiveRecv, server_addr, timeout):
         if flag_end == 1:
             print(">>> Cliente: transferencia finalizada.")
             work_done = True
-            sock.sendto(seq_expected.to_bytes(4, "big"), server_addr)  # ACK de 4 bytes
+            # Enviar ACK para el paquete END
+            sock.sendto(pkg_id.to_bytes(4, "big"), server_addr)  # ACK de 4 bytes
+            print(f">>> Cliente: envié ACK final para paquete {pkg_id}")
             break
 
         if pkg_id == seq_expected:
+            # Paquete en orden, procesar y enviar ACK
             arch.write_data(data)
             sock.sendto(seq_expected.to_bytes(4, "big"), server_addr)
-            print(f">>> Cliente: mando ACK{seq_expected}")
+            print(f">>> Cliente: paquete en orden, envié ACK{seq_expected}")
             seq_expected += 1
         else:
-            sock.sendto((seq_expected - 1).to_bytes(4, "big"), server_addr)
-            print(f">>> Cliente: paquete fuera de orden, reenvío ACK{seq_expected - 1}")
+            # Paquete fuera de orden, enviar ACK del último paquete correcto
+            if seq_expected > 0:
+                last_ack = seq_expected - 1
+            else:
+                last_ack = 0  # Si es el primer paquete y está fuera de orden
+            sock.sendto(last_ack.to_bytes(4, "big"), server_addr)
+            print(f">>> Cliente: paquete fuera de orden (recibí {pkg_id}, esperaba {seq_expected}), reenvío ACK{last_ack}")
     
-   
+    print(">>> Cliente: cerrando archivo...")
     arch.archivo.close()
