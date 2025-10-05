@@ -86,7 +86,7 @@ def download_from_client_stop_and_wait(name, sock, addr, channel, timeout):
                             seq_num = 1 - seq_num
                     else:
                         print(f">>> Server: ACK incorrecto, esperaba {seq_num}, recibí {ack_num}")
-            except socket.timeout:
+            except queue.Empty:
                 print(f">>> Server: timeout esperando ACK{seq_num}, reenvío")
                 sock.sendto(pkg, addr)
 
@@ -119,39 +119,51 @@ def download_from_client_go_back_n(name, sock, addr, window_sz, channel, timeout
                 pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (seq_num).to_bytes(4, "big")  # data_len = 0, pkg_id = seq_num
                 pkg_id = (seq_num).to_bytes(4, "big")  # pkg_id = seq_num para END
                 file_finished = True
+                print(f">>> Server: creando paquete END con pkg_id={seq_num}")
+            
             sock.sendto(pkg, addr)
             print(f">>> Server: envió paquete con flag_end={pkg[0] & 1}, pkg_id={int.from_bytes(pkg_id, 'big')} (len={len(pkg)})")
-            if pkg_id != (0).to_bytes(4, "big"):
-                pkgs_not_ack[pkg_id] = pkg
+            
+            # Siempre agregar a pkgs_not_ack, incluyendo el paquete END
+            pkgs_not_ack[pkg_id] = pkg
             seq_num += 1
         
         # Fase 2: Esperar ACKs
-        print(">>> Server: termine de enviar los paquetes, tengo que esperar ACK")
+        print(f">>> Server: termine de enviar los paquetes, tengo que esperar ACK. Paquetes sin ACK: {len(pkgs_not_ack)}")
         
         try:
             pkg = channel.get(block=True, timeout=timeout)
             print(f">>> Server: recibí el ACK del paquete: {pkg}")
             if len(pkg) == 4:
                 ack_num = int.from_bytes(pkg, "big")
+                print(f">>> Server: ACK recibido para paquete {ack_num}")
+                
+                # Remover todos los paquetes con pkg_id <= ack_num
                 to_remove = []
                 for pkg_id in pkgs_not_ack:
                     pkg_id_num = int.from_bytes(pkg_id, 'big')
                     if pkg_id_num <= ack_num:
                         to_remove.append(pkg_id)
+                        print(f">>> Server: removiendo paquete {pkg_id_num} de la ventana")
+                
                 for pkg_id in to_remove:
                     del pkgs_not_ack[pkg_id]
                 
+                # Si terminamos el archivo y no hay paquetes sin confirmar, salir
                 if file_finished and not pkgs_not_ack:
+                    print(">>> Server: todos los paquetes confirmados, finalizando transferencia")
                     end = True
 
         except queue.Empty:
             if file_finished and not pkgs_not_ack:
                 # Si terminamos el archivo y no hay paquetes sin confirmar, salir
+                print(">>> Server: timeout pero no hay paquetes pendientes, finalizando")
                 end = True
             else:
-                print(">>> Server: timeout, no recibi ACKs, reenvio los n paquetes")
-                for value in pkgs_not_ack.values():
-                    sock.sendto(value, addr)
+                print(f">>> Server: timeout, no recibi ACKs, reenvio {len(pkgs_not_ack)} paquetes")
+                for pkg_id, pkg in pkgs_not_ack.items():
+                    sock.sendto(pkg, addr)
+                    print(f">>> Server: reenvió paquete pkg_id={int.from_bytes(pkg_id, 'big')}")
         except ConnectionResetError:
                 print(">>> Server: Conexión reseteada durante download")
                 return
@@ -231,7 +243,7 @@ def manage_client(channel: queue.Queue, addr, sock: socket):
             sock.sendto((1).to_bytes(1, "big"), addr)
             print(f">>> Server: envié ACK del nombre del archivo: {name}")
             if protocol == STOP_AND_WAIT:
-                download_from_client_go_back_n(name, sock, addr, WINDOW_SIZE_SW, channel, ACK_TIMEOUT_SW)
+                download_from_client_stop_and_wait(name, sock, addr, channel, ACK_TIMEOUT_SW)
             elif protocol == GO_BACK_N:
                 download_from_client_go_back_n(name, sock, addr, WINDOW_SIZE_GBN, channel, ACK_TIMEOUT_GBN)
     except Exception as e:
