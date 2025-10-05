@@ -4,7 +4,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from constants import UPLOAD, DOWNLOAD, WINDOW_SIZE_GBN, WINDOW_SIZE_SW, ACK_TIMEOUT_GBN, ACK_TIMEOUT_SW, GO_BACK_N, STOP_AND_WAIT
 from protocol.archive import ArchiveSender, ArchiveRecv
-from protocol.protocol import handshake, upload_stop_and_wait, upload_go_back_n, download_go_back_n
+from protocol.protocol import handshake, upload_stop_and_wait, upload_go_back_n, download_stop_and_wait, download_go_back_n
 from protocol.utils import (
     setup_logging, validate_file_path, validate_protocol, 
     setup_client_socket, create_upload_parser, create_download_parser
@@ -82,7 +82,7 @@ class FileTransferInterface:
             
             # Usar el protocolo especificado
             if protocol == STOP_AND_WAIT:
-                download_go_back_n(self.sock, arch, server_addr, ACK_TIMEOUT_SW)
+                download_stop_and_wait(self.sock, arch, server_addr, ACK_TIMEOUT_SW)
             elif protocol == GO_BACK_N:
                 download_go_back_n(self.sock, arch, server_addr, ACK_TIMEOUT_GBN)
                     
