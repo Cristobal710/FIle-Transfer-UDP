@@ -35,19 +35,30 @@ def stop_and_wait(sock: socket, msg, addr):
     """
     sock.sendto(msg, addr)
     ack_recv = False
-    while not ack_recv:
+    retry_count = 0
+    max_retries = 10
+    
+    while not ack_recv and retry_count < max_retries:
         sock.settimeout(ACK_TIMEOUT_SW)
         try:
-            pkg, addr = sock.recvfrom(1024)
-            if len(pkg) == 1:  # ACK de 1 bit
+            pkg, recv_addr = sock.recvfrom(1024)
+            # Verificar que el paquete viene de la dirección correcta
+            if recv_addr == addr and len(pkg) == 1:  # ACK de 1 bit
                 ack_recv = True
                 ack_value = int.from_bytes(pkg, "big")
                 print(f"ACK recibido: {ack_value}")
-            else:
-                print(f"Paquete no es ACK válido: {pkg}")
+            elif recv_addr != addr:
+                print(f"Paquete de dirección incorrecta: {recv_addr} (esperaba {addr})")
+            elif len(pkg) != 1:
+                print(f"Paquete no es ACK válido (len={len(pkg)}), ignorando...")
         except socket.timeout:
-            print("timeout, no recibi ACK")
+            retry_count += 1
+            print(f"timeout, no recibi ACK (intento {retry_count}/{max_retries})")
             sock.sendto(msg, addr)
+    
+    if not ack_recv:
+        print(f"Error: No se pudo completar el handshake después de {max_retries} intentos")
+        raise Exception("Handshake failed")
 
 def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_addr):
     """
@@ -65,13 +76,13 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
             if pkg is None:
                 # Crear paquete END con flag_end = 1
                 first_byte = 1  # flag_end = 1 para END
-                pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (0).to_bytes(4, "big")  # data_len = 0, pkg_id = 0
-                pkg_id = (0).to_bytes(4, "big")  # pkg_id = 0 para END
+                pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (seq_num).to_bytes(4, "big")  # data_len = 0, pkg_id = seq_num
+                pkg_id = (seq_num).to_bytes(4, "big")  # pkg_id = seq_num para END
                 file_finished = True
                 pkgs_not_ack[pkg_id] = pkg
             sock.sendto(pkg, server_addr)
-            if pkg_id != (0).to_bytes(4, "big"):
-                pkgs_not_ack[pkg_id] = pkg
+            # Siempre agregar a pkgs_not_ack, incluyendo el paquete END
+            pkgs_not_ack[pkg_id] = pkg
             seq_num += 1
         
         # Fase 2: Esperar ACKs
@@ -126,7 +137,7 @@ def download_stop_and_wait(sock: socket, arch: ArchiveRecv, server_addr, timeout
         if flag_end == 1:
             print(">>> Cliente: transferencia finalizada.")
             work_done = True
-            sock.sendto((seq_expected % 256).to_bytes(1, "big"), server_addr)  # ACK de 1 bit
+            sock.sendto((seq_num % 256).to_bytes(1, "big"), server_addr)  # ACK de 1 bit para el paquete END
             break
 
         if seq_num == seq_expected:

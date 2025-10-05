@@ -49,11 +49,26 @@ def start_network():
     server_path = os.path.join(base_path, "src", "server")
     client_path = os.path.join(base_path, "src", "client")
     
+    # Copiar archivo de prueba al servidor
+    test_file_path = os.path.join(base_path, "test.png")
+    h1.cmd(f'cp {test_file_path} {server_path}/storage/test.png')
+    
+    # Levantar servidor primero
     h1.cmd(f'xterm -hold -e "cd {server_path}; python3 server.py start-server -H 10.0.0.1 -p 5005; bash" &')
+    
+    # Esperar un poco para que el servidor se inicie
+    import time
+    time.sleep(2)
+    
+    # Copiar archivo de prueba a los hosts de upload
+    h2.cmd(f'cp {test_file_path} /tmp/test.png')
+    h3.cmd(f'cp {test_file_path} /tmp/test.png')
+    
+    # Ejecutar los 4 comandos a la vez
     h2.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
-    f'client.py upload -s /home/lucas/redes/test.png -n uploadsw.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
+    f'client.py upload -s /tmp/test.png -n uploadsw.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
     h3.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
-    f'client.py upload -s /home/lucas/redes/test.png -n uploadgbn.png -r GBN -H 10.0.0.1 -p 5005 -v; bash" &')
+    f'client.py upload -s /tmp/test.png -n uploadgbn.png -r GBN -H 10.0.0.1 -p 5005 -v; bash" &')
     h4.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
     f'client.py download -d ./downloadsw.png -n test.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
     h5.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \

@@ -119,6 +119,7 @@ def download_from_client_go_back_n(name, writing_queue: queue.Queue, addr, windo
                 pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (seq_num).to_bytes(4, "big")  # data_len = 0, pkg_id = seq_num
                 pkg_id = (seq_num).to_bytes(4, "big")  # pkg_id = seq_num para END
                 file_finished = True
+                print(f">>> Server: creando paquete END con pkg_id={seq_num}")
             writing_queue.put((pkg, addr))
             print(f">>> Server: envió paquete con flag_end={pkg[0] & 1}, pkg_id={int.from_bytes(pkg_id, 'big')} (len={len(pkg)})")
             
@@ -173,6 +174,7 @@ def upload_from_client_go_back_n(name, channel, writing_queue: queue.Queue, addr
     Recibe archivo del cliente usando Go Back N.
     Funciona como stop and wait desde el lado del servidor.
     """
+    print(f">>> Server: upload_from_client_go_back_n iniciado para {name} desde {addr}")
     # Usar path absoluto
     current_dir = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(current_dir, "storage", name)
@@ -187,7 +189,8 @@ def upload_from_client_go_back_n(name, channel, writing_queue: queue.Queue, addr
         
         if flag_end == 1:
             work_done = True
-            writing_queue.put((seq_expected.to_bytes(4, "big"), addr))  # ACK de 4 bytes
+            writing_queue.put((pkg_id.to_bytes(4, "big"), addr))  # ACK de 4 bytes para el pkg_id del paquete END
+            print(f">>> Server: envié ACK final {pkg_id} a {addr}")
             break
         print(f">>> Server: recibí paquete flag_end={flag_end}, pkg_id={pkg_id}, esperado={seq_expected}")
         
@@ -195,7 +198,7 @@ def upload_from_client_go_back_n(name, channel, writing_queue: queue.Queue, addr
             arch.archivo.write(data)
             arch.archivo.flush()
             writing_queue.put((seq_expected.to_bytes(4, "big"), addr))
-            print(f">>> Server: envié ACK{seq_expected}")
+            print(f">>> Server: envié ACK{seq_expected} a {addr}")
             seq_expected += 1
         else:
             writing_queue.put(((seq_expected - 1).to_bytes(4, "big"), addr))
@@ -204,10 +207,14 @@ def upload_from_client_go_back_n(name, channel, writing_queue: queue.Queue, addr
 
 def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
     try:
+        print(f">>> Server: iniciando manejo de cliente {addr}")
         conexion_type = channel.get(block=True)
+        print(f">>> Server: recibí conexion_type={conexion_type} de {addr}")
 
         writing_queue.put(((1).to_bytes(1, "big"), addr))
+        print(f">>> Server: envié ACK de conexion_type a {addr}")
         protocol = channel.get(block=True)
+        print(f">>> Server: recibí protocol={protocol} de {addr}")
 
         while protocol == conexion_type:  # entonces el ACK se perdio, reenviamos
             writing_queue.put(((1).to_bytes(1, "big"), addr))
@@ -223,7 +230,7 @@ def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
         name = name.decode()
         protocol = protocol.decode()
 
-        print(f">>> Server: conexion_type={conexion_type.decode()}, protocol={protocol}, name={name}")
+        print(f">>> Server: conexion_type={conexion_type.decode()}, protocol={protocol}, name={name}, addr={addr}")
 
         if conexion_type == UPLOAD.encode():
             # Enviar ACK del nombre del archivo
@@ -240,7 +247,7 @@ def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
             writing_queue.put(((1).to_bytes(1, "big"), addr))
             print(f">>> Server: envié ACK del nombre del archivo: {name}")
             if protocol == STOP_AND_WAIT:
-                download_from_client_go_back_n(name, writing_queue, addr, WINDOW_SIZE_SW, channel, ACK_TIMEOUT_SW)
+                download_from_client_stop_and_wait(name, writing_queue, addr, channel, ACK_TIMEOUT_SW)
             elif protocol == GO_BACK_N:
                 download_from_client_go_back_n(name, writing_queue, addr, WINDOW_SIZE_GBN, channel, ACK_TIMEOUT_GBN)
     except Exception as e:
@@ -276,6 +283,7 @@ class Server:
         while True:
             try:
                 pkg, addr = self.sock.recvfrom(1024)
+                print(f">>> Server: recibí paquete de {len(pkg)} bytes de {addr}")
                 if addr in self.clients:
                     self.clients[addr][0].put(pkg) 
                 else:
