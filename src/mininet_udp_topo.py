@@ -20,7 +20,7 @@ def start_network():
     h5 = net.addHost("h5", ip="10.0.0.5")
     s1 = net.addSwitch("s1")
 
-    net.addLink(h1, s1, loss= 10)
+    net.addLink(h1, s1, loss=10)
     net.addLink(h2, s1)
     net.addLink(h3, s1)
     net.addLink(h4, s1)
@@ -31,6 +31,11 @@ def start_network():
     wireshark_dir = os.path.join(base_path, "wireshark_files")
     if not os.path.exists(wireshark_dir):
         os.makedirs(wireshark_dir)
+    
+    # Crear directorio para logs si no existe
+    logs_dir = os.path.join(base_path, "logs")
+    if not os.path.exists(logs_dir):
+        os.makedirs(logs_dir)
 
     # Start tcpdump on server (h1)
     tcpdump_h1 = h1.popen(f"tcpdump -i h1-eth0 udp -w {wireshark_dir}/h1_capture.pcap")
@@ -54,7 +59,7 @@ def start_network():
     h1.cmd(f'cp {test_file_path} {server_path}/storage/test.png')
     
     # Levantar servidor primero
-    h1.cmd(f'xterm -hold -e "cd {server_path}; python3 server.py start-server -H 10.0.0.1 -p 5005; bash" &')
+    h1.cmd(f'xterm -hold -e "cd {server_path}; python3 server.py start-server -H 10.0.0.1 -p 5005 2>&1 | tee {logs_dir}/server.log; bash" &')
     
     # Esperar un poco para que el servidor se inicie
     import time
@@ -64,17 +69,29 @@ def start_network():
     h2.cmd(f'cp {test_file_path} /tmp/test.png')
     h3.cmd(f'cp {test_file_path} /tmp/test.png')
     
-    # Ejecutar los 4 comandos a la vez
+    # Ejecutar los 4 comandos a la vez con logging
     h2.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
-    f'client.py upload -s /tmp/test.png -n uploadsw.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
+    f'client.py upload -s /tmp/test.png -n uploadsw.png -r SW -H 10.0.0.1 -p 5005 -v 2>&1 | tee {logs_dir}/client_upload_sw.log; bash" &')
     h3.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
-    f'client.py upload -s /tmp/test.png -n uploadgbn.png -r GBN -H 10.0.0.1 -p 5005 -v; bash" &')
+    f'client.py upload -s /tmp/test.png -n uploadgbn.png -r GBN -H 10.0.0.1 -p 5005 -v 2>&1 | tee {logs_dir}/client_upload_gbn.log; bash" &')
     h4.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
-    f'client.py download -d ./downloadsw.png -n test.png -r SW -H 10.0.0.1 -p 5005 -v; bash" &')
+    f'client.py download -d ./downloadsw.png -n test.png -r SW -H 10.0.0.1 -p 5005 -v 2>&1 | tee {logs_dir}/client_download_sw.log; bash" &')
     h5.cmd(f'xterm -hold -e "cd {client_path}; python3 ' \
-    f'client.py download -d ./downloadgbn.png -n test.png -r GBN -H 10.0.0.1 -p 5005 -v; bash" &')
+    f'client.py download -d ./downloadgbn.png -n test.png -r GBN -H 10.0.0.1 -p 5005 -v 2>&1 | tee {logs_dir}/client_download_gbn.log; bash" &')
 
+    print(f"\n=== Red iniciada ===")
+    print(f"Capturas de red: {wireshark_dir}/")
+    print(f"Logs de aplicación: {logs_dir}/")
+    print(f"- server.log: Logs del servidor")
+    print(f"- client_upload_sw.log: Logs del cliente upload Stop & Wait")
+    print(f"- client_upload_gbn.log: Logs del cliente upload Go Back N")
+    print(f"- client_download_sw.log: Logs del cliente download Stop & Wait")
+    print(f"- client_download_gbn.log: Logs del cliente download Go Back N")
+    print(f"Presiona 'exit' en la CLI de Mininet para terminar\n")
+    
     CLI(net)
+    
+    print("\n=== Terminando red ===")
     h1.cmd("killall xterm")
     h2.cmd("killall xterm")
     h3.cmd("killall xterm")
@@ -85,6 +102,9 @@ def start_network():
     tcpdump_h3.terminate()
     tcpdump_h4.terminate()
     tcpdump_h5.terminate()
+    
+    print(f"Logs guardados en: {logs_dir}/")
+    print(f"Capturas guardadas en: {wireshark_dir}/")
     net.stop()
 
 
