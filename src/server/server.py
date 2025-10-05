@@ -14,7 +14,7 @@ from protocol.archive import ArchiveRecv, ArchiveSender
 from protocol.utils import setup_logging, create_server_parser
 
 
-def upload_from_client(name, channel: queue.Queue, sock: socket, addr):
+def upload_from_client(name, channel: queue.Queue, writing_queue: queue.Queue, addr):
     # Usar path absoluto
     current_dir = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(current_dir, "storage", name)
@@ -28,19 +28,19 @@ def upload_from_client(name, channel: queue.Queue, sock: socket, addr):
         
         if flag_end == 1:
             work_done = True
-            sock.sendto((seq_expected % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            writing_queue.put(((seq_expected % 256).to_bytes(1, "big"), addr))  # ACK de 1 bit
             break
         
         if seq_num == seq_expected: 
             arch.archivo.write(data)
             arch.archivo.flush()
-            sock.sendto((seq_num % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            writing_queue.put(((seq_num % 256).to_bytes(1, "big"), addr))  # ACK de 1 bit
             seq_expected = 1 - seq_expected 
         else: # Duplicado, reenvío ACK del último válido
-            sock.sendto(((1 - seq_expected) % 256).to_bytes(1, "big"), addr)  # ACK de 1 bit
+            writing_queue.put((((1 - seq_expected) % 256).to_bytes(1, "big"), addr))  # ACK de 1 bit
 
 
-def download_from_client_stop_and_wait(name, sock, addr, channel, timeout):
+def download_from_client_stop_and_wait(name, writing_queue: queue.Queue, addr, channel, timeout):
     """
     Stop and Wait Download - Servidor envía archivo al cliente
     """
@@ -70,7 +70,7 @@ def download_from_client_stop_and_wait(name, sock, addr, channel, timeout):
             pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big")  # data_len = 0
             end = True
        
-        sock.sendto(pkg, addr)
+        writing_queue.put((pkg, addr))
         print(f">>> Server: envió paquete con seq={seq_num} (len={len(pkg)})")
 
         ack_recv = False
@@ -88,9 +88,9 @@ def download_from_client_stop_and_wait(name, sock, addr, channel, timeout):
                         print(f">>> Server: ACK incorrecto, esperaba {seq_num}, recibí {ack_num}")
             except socket.timeout:
                 print(f">>> Server: timeout esperando ACK{seq_num}, reenvío")
-                sock.sendto(pkg, addr)
+                writing_queue.put((pkg, addr))
 
-def download_from_client_go_back_n(name, sock, addr, window_sz, channel, timeout):
+def download_from_client_go_back_n(name, writing_queue: queue.Queue, addr, window_sz, channel, timeout):
     """
     Envía archivo al cliente usando Go Back N.
     Utiliza una ventana deslizante para enviar n paquetes y luego esperar ACKs.
@@ -119,7 +119,7 @@ def download_from_client_go_back_n(name, sock, addr, window_sz, channel, timeout
                 pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (seq_num).to_bytes(4, "big")  # data_len = 0, pkg_id = seq_num
                 pkg_id = (seq_num).to_bytes(4, "big")  # pkg_id = seq_num para END
                 file_finished = True
-            sock.sendto(pkg, addr)
+            writing_queue.put((pkg, addr))
             print(f">>> Server: envió paquete con flag_end={pkg[0] & 1}, pkg_id={int.from_bytes(pkg_id, 'big')} (len={len(pkg)})")
             if pkg_id != (0).to_bytes(4, "big"):
                 pkgs_not_ack[pkg_id] = pkg
@@ -151,7 +151,7 @@ def download_from_client_go_back_n(name, sock, addr, window_sz, channel, timeout
             else:
                 print(">>> Server: timeout, no recibi ACKs, reenvio los n paquetes")
                 for value in pkgs_not_ack.values():
-                    sock.sendto(value, addr)
+                    writing_queue.put((value, addr))
         except ConnectionResetError:
                 print(">>> Server: Conexión reseteada durante download")
                 return
@@ -159,7 +159,7 @@ def download_from_client_go_back_n(name, sock, addr, window_sz, channel, timeout
                 print(f">>> Server: Error durante download: {e}")
                 return
 
-def upload_from_client_go_back_n(name, channel, sock, addr):
+def upload_from_client_go_back_n(name, channel, writing_queue: queue.Queue, addr):
     """
     Recibe archivo del cliente usando Go Back N.
     Funciona como stop and wait desde el lado del servidor.
@@ -178,37 +178,37 @@ def upload_from_client_go_back_n(name, channel, sock, addr):
         
         if flag_end == 1:
             work_done = True
-            sock.sendto(seq_expected.to_bytes(4, "big"), addr)  # ACK de 4 bytes
+            writing_queue.put((seq_expected.to_bytes(4, "big"), addr))  # ACK de 4 bytes
             break
         print(f">>> Server: recibí paquete flag_end={flag_end}, pkg_id={pkg_id}, esperado={seq_expected}")
         
         if pkg_id == seq_expected:
             arch.archivo.write(data)
             arch.archivo.flush()
-            sock.sendto(seq_expected.to_bytes(4, "big"), addr)
+            writing_queue.put((seq_expected.to_bytes(4, "big"), addr))
             print(f">>> Server: envié ACK{seq_expected}")
             seq_expected += 1
         else:
-            sock.sendto((seq_expected - 1).to_bytes(4, "big"), addr)
+            writing_queue.put(((seq_expected - 1).to_bytes(4, "big"), addr))
             print(f">>> Server: paquete fuera de orden, reenvío ACK{seq_expected - 1}")
 
 
-def manage_client(channel: queue.Queue, addr, sock: socket):
+def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
     try:
         conexion_type = channel.get(block=True)
 
-        sock.sendto((1).to_bytes(1, "big"), addr)  # ACK de conexion_type
+        writing_queue.put(((1).to_bytes(1, "big"), addr))
         protocol = channel.get(block=True)
 
         while protocol == conexion_type:  # entonces el ACK se perdio, reenviamos
-            sock.sendto((1).to_bytes(1, "big"), addr)
+            writing_queue.put(((1).to_bytes(1, "big"), addr))
             protocol = channel.get(block=True)
 
-        sock.sendto((1).to_bytes(1, "big"), addr)  # ACK de protocol
+        writing_queue.put(((1).to_bytes(1, "big"), addr))
         name = channel.get(block=True)
 
         while name == protocol:  # entonces el ACK se perdio, reenviamos
-            sock.sendto((1).to_bytes(1, "big"), addr)
+            writing_queue.put(((1).to_bytes(1, "big"), addr))
             name = channel.get(block=True)
 
         name = name.decode()
@@ -218,26 +218,35 @@ def manage_client(channel: queue.Queue, addr, sock: socket):
 
         if conexion_type == UPLOAD.encode():
             # Enviar ACK del nombre del archivo
-            sock.sendto((1).to_bytes(1, "big"), addr)
+            writing_queue.put(((1).to_bytes(1, "big"), addr))
             print(f">>> Server: envié ACK del nombre del archivo: {name}")
             
             if protocol == STOP_AND_WAIT:
-                upload_from_client(name, channel, sock, addr)
+                upload_from_client(name, channel, writing_queue, addr)
             elif protocol == GO_BACK_N:
-                upload_from_client_go_back_n(name, channel, sock, addr)
+                upload_from_client_go_back_n(name, channel, writing_queue, addr)
 
         elif conexion_type == DOWNLOAD.encode():
             # Enviar ACK del nombre del archivo
-            sock.sendto((1).to_bytes(1, "big"), addr)
+            writing_queue.put(((1).to_bytes(1, "big"), addr))
             print(f">>> Server: envié ACK del nombre del archivo: {name}")
             if protocol == STOP_AND_WAIT:
-                download_from_client_go_back_n(name, sock, addr, WINDOW_SIZE_SW, channel, ACK_TIMEOUT_SW)
+                download_from_client_go_back_n(name, writing_queue, addr, WINDOW_SIZE_SW, channel, ACK_TIMEOUT_SW)
             elif protocol == GO_BACK_N:
-                download_from_client_go_back_n(name, sock, addr, WINDOW_SIZE_GBN, channel, ACK_TIMEOUT_GBN)
+                download_from_client_go_back_n(name, writing_queue, addr, WINDOW_SIZE_GBN, channel, ACK_TIMEOUT_GBN)
     except Exception as e:
         print(f">>> Server: Error en manage_client: {e}")
         return
 
+def manage_writing(writing_queue: queue.Queue, sock: socket):
+    try:
+        while True:
+            pkg, addr = writing_queue.get(block=True)
+            sock.sendto(pkg, addr)
+            print(f">>> Server: envié paquete de {len(pkg)} bytes a {addr}")
+    except Exception as e:
+        print(f">>> Server: Error en manage_writing: {e}")
+        return
 
 class Server:
     def __init__(self, udp_ip, udp_port, path):
@@ -247,6 +256,12 @@ class Server:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((udp_ip, udp_port))
         print(f"Server bound to {udp_ip}:{udp_port}")
+        self.writing_queue = queue.Queue()
+        self.writing_thread = None
+
+    def _start_writing_thread(self):
+        self.writing_thread = threading.Thread(target=manage_writing, args=(self.writing_queue, self.sock))
+        self.writing_thread.start()
 
     def _listen(self):
         while True:
@@ -255,7 +270,7 @@ class Server:
                 if addr in self.clients:
                     self.clients[addr][0].put(pkg) 
                 else:
-                    self.start_client(pkg, addr)
+                    self.start_client(pkg, addr, self.writing_queue)
             except ConnectionResetError:
                 print(">>> Server: Conexión reseteada por el cliente")
                 continue
@@ -265,9 +280,9 @@ class Server:
                 print(f">>> Server: Error inesperado: {e}")
                 continue
 
-    def start_client(self, msg, addr):
+    def start_client(self, msg, addr, writing_queue):
         chan = queue.Queue()
-        t = threading.Thread(target=manage_client, args=(chan, addr, self.sock))
+        t = threading.Thread(target=manage_client, args=(chan, addr, self.sock, writing_queue))
         self.clients[addr] = [chan, t]
         chan.put(msg)
         t.start()
@@ -295,6 +310,7 @@ class ServerInterface:
             self.logger.info("Waiting for connections...")
             
             # Iniciar servidor
+            self.server._start_writing_thread()
             self.server._listen()
             
         except KeyboardInterrupt:
