@@ -22,7 +22,7 @@ def stop_and_wait(sock: socket, msg, addr):
     sock.sendto(msg, addr)
     ack_recv = False
     retry_count = 0
-    max_retries = 10  # Reintentos aumentados
+    max_retries = 70
     
     while not ack_recv and retry_count < max_retries:
         sock.settimeout(0.5)  # Timeout intermedio
@@ -55,6 +55,13 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
     pkgs_not_ack = {}
     file_finished = False
     last_ack = 0
+    
+    # Control de reintentos y timeout global
+    pkg_retry_count = {}  # Contador de reintentos por paquete
+    max_retries_per_packet = 70  # Máximo 10 reintentos por paquete
+    import time
+    transfer_start_time = time.time()
+    max_transfer_time = 300  # 5 minutos máximo para transferencia completa
 
     print(f">>> Cliente: Iniciando upload GBN con ventana={window_sz}")
     while not end:
@@ -84,7 +91,7 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
 
         import time
         start_time = time.time()
-        sock.settimeout(0.1)  # Timeout pequeño para no bloquearse indefinidamente
+        sock.settimeout(timeout)  # Timeout pequeño para no bloquearse indefinidamente
         while time.time() - start_time < timeout:
             try:
                 pkg, recv_addr = sock.recvfrom(1024)
@@ -126,15 +133,45 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
         
         if time.time() - start_time >= timeout:
             print(f">>> Cliente: Timeout esperando ACKs - file_finished={file_finished}, pkgs_not_ack={len(pkgs_not_ack)}")
+            
+            # Verificar timeout global
+            if time.time() - transfer_start_time >= max_transfer_time:
+                print(f">>> Cliente: TIMEOUT GLOBAL - Transfer excedió {max_transfer_time} segundos, abortando...")
+                return
+            
             if file_finished and not pkgs_not_ack:
                 # Si terminamos el archivo y no hay paquetes sin confirmar, salir
                 print(">>> Cliente: Archivo terminado y no hay paquetes sin confirmar, saliendo...")
                 end = True
             else:
-                print(f">>> Cliente: Reenviando {len(pkgs_not_ack)} paquetes sin ACK")
+                # Verificar reintentos por paquete antes de reenviar
+                packets_to_remove = []
+                packets_to_retry = []
+                
                 for pkg_id_bytes_key, value in pkgs_not_ack.items():
-                    sock.sendto(value, server_addr)
-                    print(f">>> Cliente: Reenvié paquete {int.from_bytes(pkg_id_bytes_key, 'big')}")
+                    pkg_num = int.from_bytes(pkg_id_bytes_key, 'big')
+                    retry_count = pkg_retry_count.get(pkg_num, 0)
+                    
+                    if retry_count >= max_retries_per_packet:
+                        print(f">>> Cliente: Paquete {pkg_num} alcanzó máximo de reintentos ({max_retries_per_packet}), asumirndo entregado")
+                        packets_to_remove.append(pkg_id_bytes_key)
+                    else:
+                        packets_to_retry.append((pkg_id_bytes_key, value, pkg_num))
+                        pkg_retry_count[pkg_num] = retry_count + 1
+                
+                # Remover paquetes que alcanzaron el límite
+                for pkg_key in packets_to_remove:
+                    del pkgs_not_ack[pkg_key]
+                
+                # Reenviar paquetes que no alcanzaron el límite
+                if packets_to_retry:
+                    print(f">>> Cliente: Reenviando {len(packets_to_retry)} paquetes sin ACK")
+                    for pkg_id_bytes_key, value, pkg_num in packets_to_retry:
+                        sock.sendto(value, server_addr)
+                        print(f">>> Cliente: Reenvié paquete {pkg_num} (intento {pkg_retry_count[pkg_num]})")
+                else:
+                    print(">>> Cliente: Todos los paquetes alcanzaron el límite de reintentos, asumiendo transferencia completa")
+                    end = True
 
 def download_go_back_n(sock: socket, arch: ArchiveRecv, server_addr, timeout):
     """

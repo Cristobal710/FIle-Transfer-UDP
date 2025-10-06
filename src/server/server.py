@@ -96,10 +96,12 @@ def download_from_client_go_back_n(name, writing_queue: queue.Queue, addr, windo
                 print(f">>> Server: Error durante download: {e}")
                 return
 
-def upload_from_client_go_back_n(name, channel, writing_queue: queue.Queue, addr):
+def upload_from_client_go_back_n(name, channel, writing_queue: queue.Queue, addr, protocol=None, sock=None):
     """
-    Recibe archivo del cliente usando Go Back N.
-    Funciona como stop and wait desde el lado del servidor.
+    Recibe archivo del cliente usando Go Back N o Stop and Wait.
+    Protocol determina la lógica de ACK:
+    - STOP_AND_WAIT: ACK del siguiente paquete esperado (pkg_id+1)
+    - GO_BACK_N: ACK del último paquete recibido en orden (expected_pkg_id-1) para fuera de orden
     """
     print(f">>> Server: upload_from_client_go_back_n iniciado para {name} desde {addr}")
     # Usar path absoluto
@@ -125,16 +127,54 @@ def upload_from_client_go_back_n(name, channel, writing_queue: queue.Queue, addr
         if pkg_id == expected_pkg_id:
             arch.archivo.write(data)
             arch.archivo.flush()
-            writing_queue.put(((pkg_id+1).to_bytes(4, "big"), addr))
-            print(f">>> Server: envié ACK{pkg_id+1} a {addr}")
+            
+            # Comportamiento diferenciado por protocolo para el último paquete
+            ack_data = (pkg_id+1).to_bytes(4, "big")
+            if flag_end == 1:
+                if protocol == STOP_AND_WAIT:
+                    # SW: Envío directo para evitar condiciones de carrera
+                    sock.sendto(ack_data, addr)
+                    print(f">>> Server: SW - envié ACK{pkg_id+1} FINAL directamente a {addr}")
+                else:
+                    # GBN: Usar cola + delay (funciona mejor con ventana deslizante)
+                    writing_queue.put((ack_data, addr))
+                    print(f">>> Server: GBN - envié ACK{pkg_id+1} FINAL por cola a {addr}")
+            else:
+                writing_queue.put((ack_data, addr))
+                print(f">>> Server: envié ACK{pkg_id+1} a {addr}")
+            
             expected_pkg_id += 1
         else:
-            writing_queue.put((expected_pkg_id.to_bytes(4, "big"), addr))
-            print(f">>> Server: paquete fuera de orden pkg_id={pkg_id}, reenvío ACK{expected_pkg_id}")
+            # Comportamiento diferente según protocolo
+            if protocol == STOP_AND_WAIT:
+                # Stop-and-Wait: reenviar el último ACK válido (expected_pkg_id)
+                writing_queue.put((expected_pkg_id.to_bytes(4, "big"), addr))
+                print(f">>> Server: SW - paquete fuera de orden pkg_id={pkg_id}, reenvío ACK{expected_pkg_id}")
+            else:
+                # Go-Back-N: ACK del último paquete recibido en orden (expected_pkg_id - 1)
+                if expected_pkg_id > 0:
+                    writing_queue.put(((expected_pkg_id-1).to_bytes(4, "big"), addr))
+                    print(f">>> Server: GBN - paquete fuera de orden pkg_id={pkg_id}, reenvío ACK{expected_pkg_id-1}")
+                else:
+                    # No enviamos ACK si aún no hemos recibido ningún paquete en orden
+                    print(f">>> Server: GBN - paquete fuera de orden pkg_id={pkg_id}, no hay paquetes previos para ACK")
 
         if flag_end == 1:
+            print(f">>> Server: paquete final recibido (flag_end=1), pkg_id={pkg_id}")
+            
+            # Delay solo para Go-Back-N (SW ya envió directo)
+            if protocol != STOP_AND_WAIT:
+                import time
+                time.sleep(0.02)  # 20ms para asegurar envío del ACK final en GBN
+                print(f">>> Server: GBN - delay completado para envío final")
+            
+            print(f">>> Server: finalizando transfer para {addr}")
             work_done = True
             break
+    
+    # Cerrar archivo al terminar
+    arch.archivo.close()
+    print(f">>> Server: upload completado para {name} desde {addr}, archivo cerrado")
 
 def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
     try:
@@ -207,9 +247,9 @@ def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
             print(f">>> Server: Delay completado para {addr}, iniciando upload_from_client_go_back_n")
             
             if protocol == STOP_AND_WAIT:
-                upload_from_client_go_back_n(name, channel, writing_queue, addr)  # GBN con ventana de 1
+                upload_from_client_go_back_n(name, channel, writing_queue, addr, STOP_AND_WAIT, sock)
             elif protocol == GO_BACK_N:
-                upload_from_client_go_back_n(name, channel, writing_queue, addr)
+                upload_from_client_go_back_n(name, channel, writing_queue, addr, GO_BACK_N, sock)
 
         elif conexion_type == DOWNLOAD.encode():
             # Enviar ACK del nombre del archivo
