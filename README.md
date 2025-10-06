@@ -1,46 +1,209 @@
-# FIle-Transfer-UDP
+# File-Transfer-UDP
 
-Trabajo Practico realizado para la Universidad de Buenos Aires, facultad de Ingenieria (FIUBA) donde la finalidad es, utilizando el protocolo de transporte UDP, conseguir una funcionalidad simil al protocolo TCP utilizando diferentes mecanismos para la transferencia de archivos a traves de sockets con una arquitectura Cliente-Servidor.
+Trabajo Práctico realizado para la Universidad de Buenos Aires, facultad de Ingeniería (FIUBA) donde la finalidad es, utilizando el protocolo de transporte UDP, conseguir una funcionalidad similar al protocolo TCP utilizando diferentes mecanismos para la transferencia de archivos a través de sockets con una arquitectura Cliente-Servidor.
+
+## Estructura del Proyecto
+
+```
+src/
+lib/                    # Archivos de protocolo, cliente y servidor
+  ├── client/           # Código del cliente
+  ├── server/           # Código del servidor
+  └── protocol/         # Implementación de protocolos UDP
+test/                   # Archivos de testing con Mininet
+upload                  # Script de upload
+download                # Script de download
+start-server            # Script para iniciar el servidor
+README.md
+```
+
+## Instalación de Dependencias
+
+### 1. Instalar dependencias de Python
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Instalar dependencias del sistema (Ubuntu/Debian)
+```bash
+chmod +x install_dependencies.sh
+./install_dependencies.sh
+```
+
+### 3. Instalar plugin de Mininet (opcional)
+```bash
+chmod +x install_plugin.sh
+./install_plugin.sh
+```
+
+## Uso del Sistema
+
+### Iniciar el Servidor
+
+```bash
+# Ayuda del servidor
+./start-server -h
+
+# Iniciar servidor con configuración por defecto
+./start-server
+
+# Iniciar servidor con configuración personalizada
+./start-server -H 192.168.1.100 -p 8080 -s /path/to/storage -v
+```
+
+**Parámetros del servidor:**
+- `-H, --host`: Dirección IP del servidor (default: 127.0.0.1)
+- `-p, --port`: Puerto del servidor (default: 5005)
+- `-s, --storage`: Directorio de almacenamiento (default: src/lib/server/storage)
+- `-v, --verbose`: Aumentar verbosidad
+- `-q, --quiet`: Reducir verbosidad
+
+### Subir Archivos (Upload)
+
+```bash
+# Ayuda del upload
+./upload -h
+
+# Subir archivo a servidor con determinado protocolo
+./upload -H 192.168.1.100 -p 8080 -s test.txt -n uploaded.txt -r SW
 
 
+./upload -H 192.168.1.100 -p 8080 -s test.txt -n uploaded.txt -r GBN
+```
 
-Para correr el programa:
+**Parámetros del upload:**
+- `-s, --src`: Ruta del archivo fuente (requerido)
+- `-n, --name`: Nombre del archivo en el servidor (requerido)
+- `-H, --host`: Dirección IP del servidor (default: 127.0.0.1)
+- `-p, --port`: Puerto del servidor (default: 5005)
+- `-r, --protocol`: Protocolo (SW o GBN, default: SW)
+- `-v, --verbose`: Aumentar verbosidad
+- `-q, --quiet`: Reducir verbosidad
 
-primero correr en una terminal python3 server.py para levantar el servidor y ponerse a escuchar paquetes.
+### Descargar Archivos (Download)
 
-luego en cualquier otra terminal correr python3 client.py 
+```bash
+# Ayuda del download
+./download -h
 
-# Mininet
+# Descargar archivo de servidor con determinado protocolo
+./download -H 192.168.1.100 -p 8080 -n file.txt -d ./downloaded.txt -r SW
 
-- Pararse en el root del proyecto
-- Correr `sudo python3 src/mininet_udp_topo.py`
-- Se levantan dos terminales, una en un nodo h1 con IP 10.0.0.1 y la otra con un cliente en el nodo h2 con IP 10.0.0.2
-- Upload -> OK
-- Download -> WIP
+./download -H 192.168.1.100 -p 8080 -n file.txt -d ./downloaded.txt -r GBN
+```
 
-```mininet > h1 tc qdisc add dev h1-eth0 root netem loss 20%``` -> fuerza que se pierdan el 20% de los paquetes que envía h1
+**Parámetros del download:**
+- `-n, --name`: Nombre del archivo a descargar (requerido)
+- `-d, --dst`: Ruta de destino (requerido)
+- `-H, --host`: Dirección IP del servidor (default: 127.0.0.1)
+- `-p, --port`: Puerto del servidor (default: 5005)
+- `-r, --protocol`: Protocolo (SW o GBN, default: SW)
+- `-v, --verbose`: Aumentar verbosidad
+- `-q, --quiet`: Reducir verbosidad
 
-# Upload with help
-`python3 src/interface.py upload -h`
+## Testing con Mininet
 
-# Upload a file
-`python3 src/interface.py upload -s /path/to/file.pdf -n myfile.pdf -v`
+### Configuración Inicial
 
-# Upload with custom server
-`python3 src/interface.py upload -H 192.168.1.100 -p 8080 -s test.txt -n uploaded.txt`
+1. **Instalar dependencias de Mininet:**
+   ```bash
+   chmod +x install_dependencies.sh
+   ./install_dependencies.sh
+   ```
 
-# Download a file  
-`python3 src/interface.py download -n myfile.pdf -d /downloads/received.pdf -v`
+2. **Instalar plugin de Mininet (opcional):**
+   ```bash
+   chmod +x install_plugin.sh
+   ./install_plugin.sh
+   ```
 
-# Download a file with GBN
+### Ejecutar Tests
 
-`python src/client/client.py download -n prueba.png -d ./test_synchronized.png -H 127.0.0.1 -p 5005 -r GBN -v`
+```bash
+# Pararse en el root del proyecto
+cd /path/to/FIle-Transfer-UDP
 
+# Ejecutar test de 4 clientes con un comando diferente cada uno
+sudo python3 test/mininet_udp_topo.py
 
-# Parametros Upload:
- - GBN: 14 sec aproximado (WINDOW_SIZE = 10, TIMEOUT = 0.05) ((((CHEQUEAR NUEVAMENTE))))
- - S&W: 1 min aproximado (WINDOW_SIZE = 1, TIMEOUT = 0.05)
+# Ejecutar test de upload con Go Back N
+sudo python3 test/test_upload_gbn.py
 
-# Parametros Download:
- - GBN: 35 sec aproximado (WINDOW_SIZE = 10, TIMEOUT = 0.05)
- - S&W: 1  min aproximado (WINDOW_SIZE = 1, TIMEOUT = 0.01)
+# Ejecutar test de download con Go Back N
+sudo python3 test/test_download_gbn.py
+
+# Ejecutar test de upload con Stop and Wait
+sudo python3 test/test_upload_sw.py
+
+# Ejecutar test de download con Stop and Wait
+sudo python3 test/test_download_sw.py
+```
+
+## Protocolos Implementados
+
+### Stop and Wait (SW)
+- Ventana de tamaño 1
+- Timeout: 0.05s
+- Tiempo aproximado: ~1 minuto para archivos grandes
+
+### Go Back N (GBN)
+- Ventana de tamaño 10
+- Timeout: 0.05s
+- Tiempo aproximado: ~14 segundos para archivos grandes
+
+## Plugin de Wireshark
+
+El plugin `udp_file_transfer.lua` permite visualizar el tráfico UDP en Wireshark con información específica del protocolo implementado.
+
+### Instalación del Plugin
+
+1. **Descargar el plugin:**
+   ```bash
+   # El plugin ya está incluido en el proyecto
+   ls udp_file_transfer.lua
+   ```
+
+2. **Instalar en Wireshark:**
+   ```bash
+   # Copiar a directorio de plugins de Wireshark
+   cp udp_file_transfer.lua ~/.local/lib/wireshark/plugins/
+   
+   # O usar el script de instalación
+   chmod +x install_plugin.sh
+   ./install_plugin.sh
+   ```
+
+3. **Reiniciar Wireshark** para cargar el plugin
+
+### Uso del Plugin
+
+1. Capturar tráfico con tcpdump durante los tests
+2. Abrir el archivo .pcap en Wireshark
+3. El plugin mostrará información detallada de los paquetes UDP del protocolo
+
+## Archivos de Log y Capturas
+
+Los tests generan automáticamente:
+- **Logs**: `logs/server.log`, `logs/client_*.log`
+- **Capturas**: `wireshark_files/h1_capture.pcap`, `wireshark_files/h2_capture.pcap`
+
+## Solución de Problemas
+
+### Error de permisos
+```bash
+# Hacer ejecutables los scripts
+chmod +x upload download start-server
+```
+
+### Error de dependencias
+```bash
+# Reinstalar dependencias
+pip install -r requirements.txt
+./install_dependencies.sh
+```
+
+### Error de Mininet
+```bash
+# Limpiar namespaces de Mininet
+sudo mn -c
+```
