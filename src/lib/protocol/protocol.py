@@ -166,7 +166,9 @@ def upload_from_client(name, channel, writing_queue: queue.Queue, addr, protocol
     print(f">>> Server: upload_from_client_go_back_n iniciado para {name} desde {addr}")
     # Usar path absoluto
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(current_dir, "storage", name)
+    target_dir = os.path.join(current_dir, "..", "server")
+    target_dir = os.path.abspath(target_dir)
+    path = os.path.join(target_dir, "storage", name)
     arch = ArchiveRecv(path)
     expected_pkg_id = 3
     work_done = False
