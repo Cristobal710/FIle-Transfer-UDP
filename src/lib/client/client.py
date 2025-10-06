@@ -2,10 +2,10 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from src.lib.constants import UPLOAD, DOWNLOAD, WINDOW_SIZE_GBN, WINDOW_SIZE_SW, ACK_TIMEOUT_GBN, ACK_TIMEOUT_SW, GO_BACK_N, STOP_AND_WAIT
-from src.lib.protocol.archive import ArchiveSender, ArchiveRecv
-from src.lib.protocol.protocol import handshake, upload_go_back_n, download_go_back_n
-from src.lib.protocol.utils import (
+from lib.constants import UPLOAD, DOWNLOAD, WINDOW_SIZE_GBN, WINDOW_SIZE_SW, ACK_TIMEOUT_GBN, ACK_TIMEOUT_SW, GO_BACK_N, STOP_AND_WAIT
+from lib.protocol.archive import ArchiveSender, ArchiveRecv
+from lib.protocol.protocol import handshake, upload_go_back_n, download_go_back_n
+from lib.protocol.utils import (
     setup_logging, validate_file_path, validate_protocol, 
     setup_client_socket, create_upload_parser, create_download_parser
 )

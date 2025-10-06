@@ -1,5 +1,5 @@
 import socket
-from src.lib.protocol.archive import ArchiveSender, ArchiveRecv
+from lib.protocol.archive import ArchiveSender, ArchiveRecv
 
 def handshake(sock: socket, name: str, type: str, protocol: str, server_addr):
     """

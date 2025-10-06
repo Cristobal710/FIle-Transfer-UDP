@@ -7,11 +7,14 @@ import argparse
 import logging
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from src.lib.constants import (
-    UPLOAD, DOWNLOAD, STOP_AND_WAIT, GO_BACK_N, ACK_TIMEOUT_SW, ACK_TIMEOUT_GBN, WINDOW_SIZE_GBN, WINDOW_SIZE_SW
-)
-from src.lib.protocol.archive import ArchiveRecv, ArchiveSender
-from src.lib.protocol.utils import setup_logging, create_server_parser
+from lib.constants import (
+     UPLOAD, DOWNLOAD, STOP_AND_WAIT, GO_BACK_N, ACK_TIMEOUT_SW, ACK_TIMEOUT_GBN, WINDOW_SIZE_GBN, WINDOW_SIZE_SW
+ )
+# from src.lib.constants import (
+#     UPLOAD, DOWNLOAD, STOP_AND_WAIT, GO_BACK_N, ACK_TIMEOUT_SW, ACK_TIMEOUT_GBN, WINDOW_SIZE_GBN, WINDOW_SIZE_SW
+# )
+from lib.protocol.archive import ArchiveRecv, ArchiveSender
+from lib.protocol.utils import setup_logging, create_server_parser
 
 
 def download_from_client_go_back_n(name, writing_queue: queue.Queue, addr, window_sz, channel, timeout):

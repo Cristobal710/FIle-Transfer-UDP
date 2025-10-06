@@ -7,7 +7,7 @@ import os
 import socket
 import sys
 
-from src.lib.constants import STOP_AND_WAIT, GO_BACK_N
+from lib.constants import STOP_AND_WAIT, GO_BACK_N
 
 
 def find_free_port():
