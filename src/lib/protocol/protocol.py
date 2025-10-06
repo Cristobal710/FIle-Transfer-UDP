@@ -1,6 +1,250 @@
 import socket
+import queue
 from lib.protocol.archive import ArchiveSender, ArchiveRecv
+import os
+import time
+from lib.constants import STOP_AND_WAIT
 
+################################### PROTOCOLO DEL SERVIDOR ################################################################
+def handshake_server(channel : queue.Queue, addr, writing_queue):
+    try:
+        print(f">>> Server: iniciando manejo de cliente {addr}")
+        conexion_type = channel.get(block=True)
+        print(f">>> Server: recibí conexion_type={conexion_type} de {addr}")
+
+        writing_queue.put(((0).to_bytes(4, "big"), addr))
+        print(f">>> Server: envié ACK de conexion_type a {addr}")
+        
+        # Esperar protocol con timeout
+        try:
+            queue_size = channel.qsize()
+            print(f">>> Server: Cola de {addr} tiene {queue_size} paquetes antes de esperar protocol")
+            protocol = channel.get(block=True, timeout=2.0)  # Timeout aumentado
+            print(f">>> Server: recibí protocol={protocol} de {addr}")
+        except queue.Empty:
+            queue_size = channel.qsize()
+            print(f">>> Server: timeout esperando protocol de {addr}, cola tiene {queue_size} paquetes")
+            return
+
+        # Reenviar ACK si el cliente reenvía el mismo paquete
+        while protocol == conexion_type:  # entonces el ACK se perdio, reenviamos
+            print(f">>> Server: cliente reenvió conexion_type, reenviando ACK a {addr}")
+            writing_queue.put(((0).to_bytes(4, "big"), addr))
+            try:
+                protocol = channel.get(block=True, timeout=2.0)  # Timeout aumentado
+            except queue.Empty:
+                print(f">>> Server: timeout esperando protocol de {addr}")
+                return
+
+        writing_queue.put(((1).to_bytes(4, "big"), addr))
+        print(f">>> Server: envié ACK de protocol a {addr}")
+        
+        # Esperar name con timeout
+        try:
+            queue_size = channel.qsize()
+            print(f">>> Server: Cola de {addr} tiene {queue_size} paquetes antes de esperar name")
+            name = channel.get(block=True, timeout=2.0)  # Timeout aumentado
+            print(f">>> Server: recibí name={name} de {addr}")
+        except queue.Empty:
+            queue_size = channel.qsize()
+            print(f">>> Server: timeout esperando name de {addr}, cola tiene {queue_size} paquetes")
+            return
+
+        # Reenviar ACK si el cliente reenvía el mismo paquete
+        while name == protocol:  # entonces el ACK se perdio, reenviamos
+            print(f">>> Server: cliente reenvió protocol, reenviando ACK a {addr}")
+            writing_queue.put(((1).to_bytes(4, "big"), addr))
+            try:
+                name = channel.get(block=True, timeout=2.0)  # Timeout aumentado
+            except queue.Empty:
+                print(f">>> Server: timeout esperando name de {addr}")
+                return
+
+        name = name.decode()
+        protocol = protocol.decode()
+        conexion_type = conexion_type.decode()
+        print(f">>> Server: conexion_type={conexion_type}, protocol={protocol}, name={name}, addr={addr}")
+    except Exception as e:
+        print(f">>> Server: Error en manage_client: {e}")
+        return
+    
+    return conexion_type, protocol, name
+
+def download_from_client(name, writing_queue: queue.Queue, addr, window_sz, channel, timeout):
+    """
+    Envía archivo al cliente usando Go Back N.
+    Utiliza una ventana deslizante para enviar n paquetes y luego esperar ACKs.
+    """
+    # Usar path absoluto
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    target_dir = os.path.join(current_dir, "..", "server")
+    target_dir = os.path.abspath(target_dir) 
+
+    path = os.path.join(target_dir, "storage", name)
+
+    if not os.path.exists(path):
+        print(f">>> Server: archivo no encontrado: {path}")
+        return
+    print(f">>> Server: archivo encontrado, empezando envío con Go Back N...")
+    arch = ArchiveSender(path)
+    
+    pkg_id = 3
+    pkgs_not_ack = {}
+    file_finished = False
+    end = False
+    
+    while not end:
+        # Fase 1: Enviar paquetes hasta llenar la ventana o terminar el archivo
+        while(len(pkgs_not_ack) < window_sz and not file_finished):
+            pkg, pkg_id_bytes = arch.next_pkg_go_back_n(pkg_id)  # Usar pkg_id directamente
+            if pkg is None:
+                # Crear paquete END con flag_end = 1
+                first_byte = 1  # flag_end = 1 para END
+                pkg = first_byte.to_bytes(1, "big") + (0).to_bytes(2, "big") + (pkg_id).to_bytes(4, "big")  # data_len = 0, pkg_id = pkg_id
+                pkg_id_bytes = (pkg_id).to_bytes(4, "big")  # pkg_id = pkg_id para END
+                file_finished = True
+                print(f">>> Server: creando paquete END con pkg_id={pkg_id}")
+            writing_queue.put((pkg, addr))
+            print(f">>> Server: envió paquete con flag_end={pkg[0] & 1}, pkg_id={pkg_id} (len={len(pkg)})")
+            
+            # Siempre agregar a pkgs_not_ack, incluyendo el paquete END
+            pkgs_not_ack[pkg_id_bytes] = pkg
+            pkg_id += 1
+        
+        # Fase 2: Esperar ACKs
+        print(f">>> Server: termine de enviar los paquetes, tengo que esperar ACK. Paquetes sin ACK: {len(pkgs_not_ack)}")
+        
+        try:
+            queue_size_before = channel.qsize()
+            print(f">>> Server: Cola de {addr} tiene {queue_size_before} paquetes antes de get() en download")
+            pkg = channel.get(block=True, timeout=timeout)
+            queue_size_after = channel.qsize()
+            print(f">>> Server: Cola de {addr} tiene {queue_size_after} paquetes después de get() en download, ACK recibido: {pkg}")
+            if len(pkg) == 4:
+                ack_num = int.from_bytes(pkg, "big")
+                print(f">>> Server: ACK recibido para paquete {ack_num}")
+                
+                # Remover todos los paquetes con pkg_id <= ack_num
+                to_remove = []
+                for pkg_id_bytes_key in pkgs_not_ack:
+                    pkg_id_num = int.from_bytes(pkg_id_bytes_key, 'big')
+                    if pkg_id_num <= ack_num:
+                        to_remove.append(pkg_id_bytes_key)
+                        print(f">>> Server: removiendo paquete {pkg_id_num} de la ventana")
+                
+                for pkg_id_bytes_key in to_remove:
+                    del pkgs_not_ack[pkg_id_bytes_key]
+                
+                # Si terminamos el archivo y no hay paquetes sin confirmar, salir
+                if file_finished and not pkgs_not_ack:
+                    print(">>> Server: todos los paquetes confirmados, finalizando transferencia")
+                    end = True
+
+        except queue.Empty:
+            if file_finished and not pkgs_not_ack:
+                # Si terminamos el archivo y no hay paquetes sin confirmar, salir
+                print(">>> Server: timeout pero no hay paquetes pendientes, finalizando")
+                end = True
+            else:
+                print(">>> Server: timeout, no recibi ACKs, reenvio los n paquetes")
+                for value in pkgs_not_ack.values():
+                    writing_queue.put((value, addr))
+        except ConnectionResetError:
+                print(">>> Server: Conexión reseteada durante download")
+                return
+        except Exception as e:
+                print(f">>> Server: Error durante download: {e}")
+                return
+
+def upload_from_client(name, channel, writing_queue: queue.Queue, addr, protocol=None, sock=None):
+    """
+    Recibe archivo del cliente usando Go Back N o Stop and Wait.
+    Protocol determina la lógica de ACK:
+    - STOP_AND_WAIT: ACK del siguiente paquete esperado (pkg_id+1)
+    - GO_BACK_N: ACK del último paquete recibido en orden (expected_pkg_id-1) para fuera de orden
+    """
+    print(f">>> Server: upload_from_client_go_back_n iniciado para {name} desde {addr}")
+    # Usar path absoluto
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(current_dir, "storage", name)
+    arch = ArchiveRecv(path)
+    expected_pkg_id = 3
+    work_done = False
+    
+    print(f">>> Server: upload_from_client_go_back_n esperando paquetes de {addr}")
+    
+    while not work_done:
+        try:
+            pkg = channel.get(block=True, timeout=30.0)  # Timeout de 30 segundos
+        except queue.Empty:
+            print(f">>> Server: Timeout esperando paquetes de {addr}")
+            break
+        
+        flag_end, data_len, pkg_id, data = arch.recv_pckg_go_back_n(pkg)
+        
+        print(f">>> Server: recibí paquete flag_end={flag_end}, pkg_id={pkg_id}, esperado={expected_pkg_id}")
+        
+        if pkg_id == expected_pkg_id:
+            arch.archivo.write(data)
+            arch.archivo.flush()
+            
+            # Comportamiento diferenciado por protocolo para el último paquete
+            ack_data = (pkg_id+1).to_bytes(4, "big")
+            if flag_end == 1:
+                if protocol == STOP_AND_WAIT:
+                    # SW: Envío directo para evitar condiciones de carrera
+                    sock.sendto(ack_data, addr)
+                    print(f">>> Server: SW - envié ACK{pkg_id+1} FINAL directamente a {addr}")
+                else:
+                    # GBN: Usar cola + delay (funciona mejor con ventana deslizante)
+                    writing_queue.put((ack_data, addr))
+                    print(f">>> Server: GBN - envié ACK{pkg_id+1} FINAL por cola a {addr}")
+            else:
+                writing_queue.put((ack_data, addr))
+                print(f">>> Server: envié ACK{pkg_id+1} a {addr}")
+            
+            expected_pkg_id += 1
+        else:
+            # Comportamiento diferente según protocolo
+            if protocol == STOP_AND_WAIT:
+                # Stop-and-Wait: reenviar el último ACK válido (expected_pkg_id)
+                writing_queue.put((expected_pkg_id.to_bytes(4, "big"), addr))
+                print(f">>> Server: SW - paquete fuera de orden pkg_id={pkg_id}, reenvío ACK{expected_pkg_id}")
+            else:
+                # Go-Back-N: ACK del último paquete recibido en orden (expected_pkg_id - 1)
+                if expected_pkg_id > 0:
+                    writing_queue.put(((expected_pkg_id-1).to_bytes(4, "big"), addr))
+                    print(f">>> Server: GBN - paquete fuera de orden pkg_id={pkg_id}, reenvío ACK{expected_pkg_id-1}")
+                else:
+                    # No enviamos ACK si aún no hemos recibido ningún paquete en orden
+                    print(f">>> Server: GBN - paquete fuera de orden pkg_id={pkg_id}, no hay paquetes previos para ACK")
+
+        if flag_end == 1:
+            print(f">>> Server: paquete final recibido (flag_end=1), pkg_id={pkg_id}")
+            
+            # Delay solo para Go-Back-N (SW ya envió directo)
+            if protocol != STOP_AND_WAIT:
+                time.sleep(0.02)  # 20ms para asegurar envío del ACK final en GBN
+                print(f">>> Server: GBN - delay completado para envío final")
+            
+            print(f">>> Server: finalizando transfer para {addr}")
+            work_done = True
+            break
+    
+    # Cerrar archivo al terminar
+    arch.archivo.close()
+    print(f">>> Server: upload completado para {name} desde {addr}, archivo cerrado")
+
+################################### FINAL PROTOCOLO SERVER ################################################################
+
+
+
+
+
+
+
+
+################################### PROTOCOLO DEL CLIENTE #################################################################
 def handshake(sock: socket, name: str, type: str, protocol: str, server_addr):
     """
     Realiza el handshake inicial con el servidor.
@@ -29,7 +273,6 @@ def stop_and_wait(sock: socket, msg, ack_number, addr):
         try:
             pkg, recv_addr = sock.recvfrom(1024)
             # Verificar que el paquete viene de la dirección correcta
-            print(pkg)
             value = int.from_bytes(pkg, "big")
             if recv_addr == addr and len(pkg) == 4 and (value == ack_number) :  # ACK de 4 bytes
                 ack_recv = True
@@ -48,7 +291,7 @@ def stop_and_wait(sock: socket, msg, ack_number, addr):
         print(f"Error: No se pudo completar el handshake después de {max_retries} intentos")
         raise Exception("Handshake failed")
 
-def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_addr, timeout):
+def upload(sock: socket, arch: ArchiveSender, end, window_sz, server_addr, timeout):
     """
     Sube un archivo usando el protocolo Go Back N.
     Utiliza una ventana deslizante para enviar múltiples paquetes sin esperar confirmación.
@@ -175,7 +418,7 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
                     print(">>> Cliente: Todos los paquetes alcanzaron el límite de reintentos, asumiendo transferencia completa")
                     end = True
 
-def download_go_back_n(sock: socket, arch: ArchiveRecv, server_addr, timeout):
+def download(sock: socket, arch: ArchiveRecv, server_addr, timeout):
     """
     Descarga un archivo usando el protocolo Go Back N.
     Funciona como stop and wait desde el lado del receptor.
@@ -234,3 +477,5 @@ def download_go_back_n(sock: socket, arch: ArchiveRecv, server_addr, timeout):
     
     print(">>> Cliente: cerrando archivo...")
     arch.archivo.close()
+
+################################### FIN PROTOCOLO DE CLIENTE #################################################################
