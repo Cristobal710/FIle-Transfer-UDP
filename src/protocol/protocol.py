@@ -6,15 +6,15 @@ def handshake(sock: socket, name: str, type: str, protocol: str, server_addr):
     Realiza el handshake inicial con el servidor.
     Envía el tipo de conexión (UPLOAD o DOWNLOAD), el protocolo (SW o GBN) y el nombre del archivo.
     """
-    stop_and_wait(sock, type.encode(), server_addr)
-    stop_and_wait(sock, protocol.encode(), server_addr)
-    stop_and_wait(sock, name.encode(), server_addr)
+    stop_and_wait(sock, type.encode(), 0, server_addr)
+    stop_and_wait(sock, protocol.encode(), 1, server_addr)
+    stop_and_wait(sock, name.encode(), 2, server_addr)
     
     # Delay para evitar que se mezclen paquetes del handshake con los de datos
     import time
     time.sleep(1.0)
   
-def stop_and_wait(sock: socket, msg, addr):
+def stop_and_wait(sock: socket, msg, ack_number, addr):
     """
     Envía un mensaje usando el protocolo Stop and Wait.
     Reenvía el mensaje hasta recibir confirmación ACK.
@@ -25,11 +25,13 @@ def stop_and_wait(sock: socket, msg, addr):
     max_retries = 70
     
     while not ack_recv and retry_count < max_retries:
-        sock.settimeout(0.5)  # Timeout intermedio
+        sock.settimeout(0.1)  # Timeout intermedio
         try:
             pkg, recv_addr = sock.recvfrom(1024)
             # Verificar que el paquete viene de la dirección correcta
-            if recv_addr == addr and len(pkg) == 4:  # ACK de 4 bytes
+            print(pkg)
+            value = int.from_bytes(pkg, "big")
+            if recv_addr == addr and len(pkg) == 4 and (value == ack_number) :  # ACK de 4 bytes
                 ack_recv = True
                 ack_value = int.from_bytes(pkg, "big")
                 print(f"ACK recibido: {ack_value}")
@@ -51,7 +53,7 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
     Sube un archivo usando el protocolo Go Back N.
     Utiliza una ventana deslizante para enviar múltiples paquetes sin esperar confirmación.
     """
-    pkg_id = 0
+    pkg_id = 3
     pkgs_not_ack = {}
     file_finished = False
     last_ack = 0
@@ -102,8 +104,8 @@ def upload_go_back_n(sock: socket, arch: ArchiveSender, end, window_sz, server_a
                 continue
             
             print(f">>> Cliente: Recibí ACK: {pkg} de {recv_addr}")
-            
-            if len(pkg) == 4:
+            value = int.from_bytes(pkg, "big")
+            if len(pkg) == 4 and value != -1:
                 ack_num = int.from_bytes(pkg, "big")
                 print(f">>> Cliente: Procesando ACK {ack_num} (bytes: {pkg})")
                 if ack_num > last_ack:
@@ -178,7 +180,7 @@ def download_go_back_n(sock: socket, arch: ArchiveRecv, server_addr, timeout):
     Descarga un archivo usando el protocolo Go Back N.
     Funciona como stop and wait desde el lado del receptor.
     """
-    expected_pkg_id = 0
+    expected_pkg_id = 3
     work_done = False
     print(">>> Cliente: empezando a recibir archivo con Go Back N...")
 

@@ -28,7 +28,7 @@ def download_from_client_go_back_n(name, writing_queue: queue.Queue, addr, windo
     print(f">>> Server: archivo encontrado, empezando envío con Go Back N...")
     arch = ArchiveSender(path)
     
-    pkg_id = 0
+    pkg_id = 3
     pkgs_not_ack = {}
     file_finished = False
     end = False
@@ -108,7 +108,7 @@ def upload_from_client_go_back_n(name, channel, writing_queue: queue.Queue, addr
     current_dir = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(current_dir, "storage", name)
     arch = ArchiveRecv(path)
-    expected_pkg_id = 0
+    expected_pkg_id = 3
     work_done = False
     
     print(f">>> Server: upload_from_client_go_back_n esperando paquetes de {addr}")
@@ -182,7 +182,7 @@ def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
         conexion_type = channel.get(block=True)
         print(f">>> Server: recibí conexion_type={conexion_type} de {addr}")
 
-        writing_queue.put(((1).to_bytes(4, "big"), addr))
+        writing_queue.put(((0).to_bytes(4, "big"), addr))
         print(f">>> Server: envié ACK de conexion_type a {addr}")
         
         # Esperar protocol con timeout
@@ -199,7 +199,7 @@ def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
         # Reenviar ACK si el cliente reenvía el mismo paquete
         while protocol == conexion_type:  # entonces el ACK se perdio, reenviamos
             print(f">>> Server: cliente reenvió conexion_type, reenviando ACK a {addr}")
-            writing_queue.put(((1).to_bytes(4, "big"), addr))
+            writing_queue.put(((0).to_bytes(4, "big"), addr))
             try:
                 protocol = channel.get(block=True, timeout=2.0)  # Timeout aumentado
             except queue.Empty:
@@ -232,13 +232,16 @@ def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
 
         name = name.decode()
         protocol = protocol.decode()
+        conexion_type = conexion_type.decode()
+        print(f">>> Server: conexion_type={conexion_type}, protocol={protocol}, name={name}, addr={addr}")
 
-        print(f">>> Server: conexion_type={conexion_type.decode()}, protocol={protocol}, name={name}, addr={addr}")
-
-        if conexion_type == UPLOAD.encode():
+        for i in range (1, 11):
             # Enviar ACK del nombre del archivo
-            writing_queue.put(((1).to_bytes(4, "big"), addr))
+            writing_queue.put(((2).to_bytes(4, "big"), addr))
             print(f">>> Server: envié ACK del nombre del archivo: {name}")
+        
+        if conexion_type == UPLOAD:
+            
             
             # Delay para evitar que se mezclen paquetes del handshake con los de datos
             print(f">>> Server: Iniciando delay de 1 segundo para {addr} (upload)")
@@ -251,10 +254,7 @@ def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
             elif protocol == GO_BACK_N:
                 upload_from_client_go_back_n(name, channel, writing_queue, addr, GO_BACK_N, sock)
 
-        elif conexion_type == DOWNLOAD.encode():
-            # Enviar ACK del nombre del archivo
-            writing_queue.put(((1).to_bytes(4, "big"), addr))
-            print(f">>> Server: envié ACK del nombre del archivo: {name}")
+        elif conexion_type == DOWNLOAD:
             
             # Delay para evitar que se mezclen paquetes del handshake con los de datos
             print(f">>> Server: Iniciando delay de 1 segundo para {addr} (download)")
