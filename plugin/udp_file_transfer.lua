@@ -51,8 +51,8 @@ end
 local function detect_protocol_type(buffer)
     local length = buffer:len()
     
-    -- ACK packets son de 1 byte
-    if length == 1 then
+    -- ACK packets: 1 byte (Stop-and-Wait) o 4 bytes (Go-Back-N)
+    if length == 1 or length == 4 then
         return "ACK"
     end
     
@@ -114,10 +114,17 @@ function udp_file_transfer.dissector(buffer, pinfo, tree)
     
     -- Procesar según el tipo
     if proto_type == "ACK" then
-        -- Paquete ACK (1 byte)
-        local ack_num = buffer(0, 1):uint()
-        subtree:add(fields.ack_num, buffer(0, 1))
-        pinfo.cols.info = string.format("ACK %d", ack_num)
+        -- Paquete ACK (1 byte para Stop-and-Wait, 4 bytes para Go-Back-N)
+        local ack_num
+        if length == 1 then
+            ack_num = buffer(0, 1):uint()
+            subtree:add(fields.ack_num, buffer(0, 1))
+            pinfo.cols.info = string.format("ACK %d", ack_num)
+        elseif length == 4 then
+            ack_num = buffer(0, 4):uint()
+            subtree:add("ACK Number: " .. ack_num)
+            pinfo.cols.info = string.format("ACK %d", ack_num)
+        end
         
     elseif proto_type == "HANDSHAKE" then
         -- Paquete de handshake (texto plano)
@@ -177,6 +184,22 @@ end
 local udp_port = DissectorTable.get("udp.port")
 udp_port:add(5005, udp_file_transfer)  -- Puerto del servidor
 udp_port:add(5006, udp_file_transfer)  -- Puerto del cliente
+
+-- También registrar como heurístico para capturar todos los paquetes relevantes
+udp_file_transfer:register_heuristic("udp", function(buffer, pinfo, tree)
+    if is_file_transfer_packet(buffer, pinfo) then
+        udp_file_transfer.dissector(buffer, pinfo, tree)
+        return true
+    end
+    return false
+end)
+
+-- Información del plugin
+set_plugin_info({
+    version = "1.0.0",
+    author = "UDP File Transfer Protocol Analyzer",
+    description = "Dissector for custom UDP file transfer protocol supporting Stop-and-Wait and Go-Back-N"
+})udp_port:add(5006, udp_file_transfer)  -- Puerto del cliente
 
 -- También registrar como heurístico para capturar todos los paquetes relevantes
 udp_file_transfer:register_heuristic("udp", function(buffer, pinfo, tree)
