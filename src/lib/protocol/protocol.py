@@ -118,11 +118,7 @@ def download_from_client(name, writing_queue: queue.Queue, addr, window_sz, chan
         print(f">>> Server: termine de enviar los paquetes, tengo que esperar ACK. Paquetes sin ACK: {len(pkgs_not_ack)}")
         
         try:
-            queue_size_before = channel.qsize()
-            #print(f">>> Server: Cola de {addr} tiene {queue_size_before} paquetes antes de get() en download")
             pkg = channel.get(block=True, timeout=timeout)
-            queue_size_after = channel.qsize()
-            #print(f">>> Server: Cola de {addr} tiene {queue_size_after} paquetes después de get() en download, ACK recibido: {pkg}")
             if len(pkg) == 4:
                 ack_num = int.from_bytes(pkg, "big")
                 logger.debug(f">>> Server: ACK recibido para paquete {ack_num}")
@@ -186,7 +182,7 @@ def upload_from_client(name, channel, writing_queue: queue.Queue, addr, protocol
             logger.warning(f">>> Server: Timeout esperando paquetes de {addr}")
             break
         
-        flag_end, _, pkg_id, data = arch.recv_pckg_go_back_n(pkg)
+        flag_end, data_len, pkg_id, data = arch.recv_pckg_go_back_n(pkg)
         
         logger.debug(f">>> Server: recibí paquete flag_end={flag_end}, pkg_id={pkg_id}, esperado={expected_pkg_id}")
         
@@ -201,10 +197,11 @@ def upload_from_client(name, channel, writing_queue: queue.Queue, addr, protocol
                 logger.debug(f">>> Server: finalizando transfer para {addr}")
                 work_done = True
             else:
-                arch.write_data(data)
-                ack_data = (pkg_id+1).to_bytes(4, "big")
-                writing_queue.put((ack_data, addr))
-                expected_pkg_id += 1
+                if (data_len != -1):
+                    arch.write_data(data)
+                    ack_data = (pkg_id+1).to_bytes(4, "big")
+                    writing_queue.put((ack_data, addr))
+                    expected_pkg_id += 1
         else:
             writing_queue.put((expected_pkg_id.to_bytes(4, "big"), addr))
           
@@ -451,12 +448,13 @@ def download(sock: socket, arch: ArchiveRecv, server_addr, timeout, verbose=Fals
                 logger.debug(f">>> Cliente: Envié ACK final para paquete END {pkg_id}")
             
             else:
-                # Paquete en orden, procesar y enviar ACK
-                logger.debug(f">>> Cliente: Paquete en orden, escribiendo {data_len} bytes")
-                arch.write_data(data)
-                sock.sendto(pkg_id.to_bytes(4, "big"), server_addr)
-                logger.debug(f">>> Cliente: Envié ACK{pkg_id} para paquete en orden")
-                expected_pkg_id += 1
+                if (data_len != -1):
+                    # Paquete en orden, procesar y enviar ACK
+                    logger.debug(f">>> Cliente: Paquete en orden, escribiendo {data_len} bytes")
+                    arch.write_data(data)
+                    sock.sendto(pkg_id.to_bytes(4, "big"), server_addr)
+                    logger.debug(f">>> Cliente: Envié ACK{pkg_id} para paquete en orden")
+                    expected_pkg_id += 1
         else:
             # Paquete fuera de orden, enviar ACK del último paquete correcto
             if expected_pkg_id > 0:

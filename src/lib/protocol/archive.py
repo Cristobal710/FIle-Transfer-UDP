@@ -82,6 +82,8 @@ class ArchiveRecv:
         data_len = int.from_bytes(msg[1:3], "big") 
         pkg_id = int.from_bytes(msg[3:7], "big")
         data = msg[7:7+data_len]
+        if (data_len != len(data)):
+            data_len = -1
         return flag_end, data_len, pkg_id, data
 
     def write_data(self, data):
