@@ -137,6 +137,9 @@ sudo python3 test/test_upload_sw.py
 
 # Ejecutar test de download con Stop and Wait
 sudo python3 test/test_download_sw.py
+
+# Ejecutar 5 terminales de mininet
+sudo python3 test/mininet_without_cmds.py 
 ```
 
 ## Protocolos Implementados
