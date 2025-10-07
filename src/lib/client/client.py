@@ -1,101 +1,112 @@
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from lib.constants import UPLOAD, DOWNLOAD, WINDOW_SIZE_GBN, WINDOW_SIZE_SW, ACK_TIMEOUT_GBN, ACK_TIMEOUT_SW, GO_BACK_N, STOP_AND_WAIT
+from lib.constants import (
+    UPLOAD, DOWNLOAD, WINDOW_SIZE_GBN, WINDOW_SIZE_SW,
+    ACK_TIMEOUT_GBN, ACK_TIMEOUT_SW, GO_BACK_N, STOP_AND_WAIT
+)
 from lib.protocol.archive import ArchiveSender, ArchiveRecv
 from lib.protocol.protocol import handshake, upload, download
 from lib.protocol.utils import (
-    setup_logging, validate_file_path, validate_protocol, 
+    setup_logging, validate_file_path, validate_protocol,
     setup_client_socket, create_upload_parser, create_download_parser
 )
+
+sys.path.append(os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+))
 
 
 class FileTransferInterface:
     def __init__(self):
         self.logger = setup_logging('file_transfer')
         self.sock = None
-        
+
     def _setup_socket(self, host, port):
         if self.sock:
             self.sock.close()
-            
         self.sock, self.target_addr = setup_client_socket(host, port)
         self.logger.debug(f"Socket bound to {self.sock.getsockname()}")
         self.logger.debug(f"Target server: {host}:{port}")
-        
+
     def upload_file(self, args):
         try:
-            self.logger = setup_logging('file_transfer', args.verbose, args.quiet)
+            self.logger = setup_logging(
+                'file_transfer', args.verbose, args.quiet
+            )
             self._setup_socket(args.host, args.port)
-            
             source_path = validate_file_path(args.src)
             protocol = validate_protocol(args.protocol)
-            
-            self.logger.info(f"Starting upload: {source_path} -> {args.name}")
+            self.logger.info(
+                f"Starting upload: {source_path} -> {args.name}"
+            )
             self.logger.debug(f"Protocol: {protocol}")
-            
             # Crear dirección del servidor
             server_addr = (args.host, args.port)
-            
             # Handshake
-            handshake(self.sock, args.name, UPLOAD, protocol, server_addr, args.verbose, args.quiet)
-            
+            handshake(
+                self.sock, args.name, UPLOAD, protocol, server_addr,
+                args.verbose, args.quiet
+            )
             # Crear archivo sender
             arch = ArchiveSender(source_path)
-            end = False
-            
             # Usar el protocolo especificado
             if protocol == "SW":
-                upload(self.sock, arch, end, WINDOW_SIZE_SW, server_addr, ACK_TIMEOUT_SW, args.verbose, args.quiet)
+                upload(
+                    self.sock, arch, False, WINDOW_SIZE_SW, server_addr,
+                    ACK_TIMEOUT_SW, args.verbose, args.quiet
+                )
             elif protocol == "GBN":
-                upload(self.sock, arch, end, WINDOW_SIZE_GBN, server_addr, ACK_TIMEOUT_GBN, args.verbose, args.quiet)
-                
+                upload(
+                    self.sock, arch, False, WINDOW_SIZE_GBN, server_addr,
+                    ACK_TIMEOUT_GBN, args.verbose, args.quiet
+                )
             self.logger.info("Upload completed successfully")
-            
         except Exception as e:
             self.logger.error(f"Upload failed: {e}")
             sys.exit(1)
         finally:
             if self.sock:
                 self.sock.close()
-                
+
     def download_file(self, args):
         try:
-            self.logger = setup_logging('file_transfer', args.verbose, args.quiet)
+            self.logger = setup_logging(
+                'file_transfer', args.verbose, args.quiet
+            )
             self._setup_socket(args.host, args.port)
-            
             protocol = validate_protocol(args.protocol)
-            
-            self.logger.info(f"Starting download: {args.name} -> {args.dst}")
+            self.logger.info(
+                f"Starting download: {args.name} -> {args.dst}"
+            )
             self.logger.debug(f"Protocol: {protocol}")
-            
             # Crear dirección del servidor
             server_addr = (args.host, args.port)
-            
             # Handshake
-            handshake(self.sock, args.name, DOWNLOAD, protocol, server_addr, args.verbose, args.quiet)
-            
+            handshake(
+                self.sock, args.name, DOWNLOAD, protocol, server_addr,
+                args.verbose, args.quiet
+            )
             # Crear archivo receiver
             arch = ArchiveRecv(args.dst)
-            end = False
-            
             # Usar el protocolo especificado
             if protocol == STOP_AND_WAIT:
-                download(self.sock, arch, server_addr, ACK_TIMEOUT_SW, args.verbose, args.quiet) #GBN CON VENTANA DE 1
+                download(
+                    self.sock, arch, server_addr, ACK_TIMEOUT_SW,
+                    args.verbose, args.quiet
+                )  # GBN CON VENTANA DE 1
             elif protocol == GO_BACK_N:
-                download(self.sock, arch, server_addr, ACK_TIMEOUT_GBN, args.verbose, args.quiet)
-                    
+                download(
+                    self.sock, arch, server_addr, ACK_TIMEOUT_GBN,
+                    args.verbose, args.quiet
+                )
             self.logger.info("Download completed successfully")
-            
         except Exception as e:
             self.logger.error(f"Download failed: {e}")
             sys.exit(1)
         finally:
             if self.sock:
                 self.sock.close()
-
-
 
 
 def main():
@@ -112,14 +123,15 @@ def main():
 
         while True:
             try:
-                command_input = input("Ingrese un comando (o 'quit' para salir): ").strip().split()
+                command_input = input(
+                    "Ingrese un comando (o 'quit' para salir): "
+                ).strip().split()
 
                 if not command_input or command_input[0] == 'quit':
                     interactive_logger.info("Hasta Luego!")
                     break
 
                 command = command_input[0]
-                
                 if command == 'upload':
                     parser = create_upload_parser()
                     try:
@@ -127,7 +139,6 @@ def main():
                         interface.upload_file(args)
                     except SystemExit:
                         pass
-                        
                 elif command == 'download':
                     parser = create_download_parser()
                     try:
@@ -135,10 +146,13 @@ def main():
                         interface.download_file(args)
                     except SystemExit:
                         pass
-
                 else:
-                    interactive_logger.warning(f"Comando desconocido: {command}")
-                    interactive_logger.info("Comandos validos: upload, download")
+                    interactive_logger.warning(
+                        f"Comando desconocido: {command}"
+                    )
+                    interactive_logger.info(
+                        "Comandos validos: upload, download"
+                    )
 
             except KeyboardInterrupt:
                 interactive_logger.info("\nHasta Luego!")
@@ -148,22 +162,23 @@ def main():
     else:
         command = sys.argv[1]
         sys.argv = sys.argv[1:]
-        
         interface = FileTransferInterface()
-        
         if command == 'upload':
             parser = create_upload_parser()
             args = parser.parse_args()
             interface.upload_file(args)
-            
         elif command == 'download':
             parser = create_download_parser()
             args = parser.parse_args()
             interface.download_file(args)
 
         else:
-            interface.logger.error(f"Comando desconocido: {command}")
-            interface.logger.info("Comandos validos: upload, download")
+            interface.logger.error(
+                f"Comando desconocido: {command}"
+            )
+            interface.logger.info(
+                "Comandos validos: upload, download"
+            )
             sys.exit(1)
 
 
