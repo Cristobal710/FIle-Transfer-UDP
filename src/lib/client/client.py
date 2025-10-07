@@ -96,14 +96,15 @@ class FileTransferInterface:
                 self.sock.close()
 
 
-
-
 def main():
+    # Logger para el modo interactivo
+    interactive_logger = setup_logging('file_transfer.interactive')
+    
     if len(sys.argv) < 2:
-        print("File Transfer Client")
-        print("Available commands: upload, download")
-        print("Use -h for help with each command")
-        print()
+        interactive_logger.info("File Transfer Client")
+        interactive_logger.info("Available commands: upload, download")
+        interactive_logger.info("Use -h for help with each command")
+        interactive_logger.info("")
         
         interface = FileTransferInterface()
         
@@ -112,7 +113,7 @@ def main():
                 command_input = input("Enter command (or 'quit' to exit): ").strip().split()
                 
                 if not command_input or command_input[0] == 'quit':
-                    print("Goodbye!")
+                    interactive_logger.info("Goodbye!")
                     break
                     
                 command = command_input[0]
@@ -134,14 +135,14 @@ def main():
                         pass
                         
                 else:
-                    print(f"Unknown command: {command}")
-                    print("Available commands: upload, download")
+                    interactive_logger.warning(f"Unknown command: {command}")
+                    interactive_logger.info("Available commands: upload, download")
                     
             except KeyboardInterrupt:
-                print("\nGoodbye!")
+                interactive_logger.info("\nGoodbye!")
                 break
             except Exception as e:
-                print(f"Error: {e}")
+                interactive_logger.error(f"Error: {e}")
     else:
         command = sys.argv[1]
         sys.argv = sys.argv[1:]
@@ -159,8 +160,8 @@ def main():
             interface.download_file(args)
             
         else:
-            print(f"Unknown command: {command}")
-            print("Available commands: upload, download")
+            interface.logger.error(f"Unknown command: {command}")
+            interface.logger.info("Available commands: upload, download")
             sys.exit(1)
 
 

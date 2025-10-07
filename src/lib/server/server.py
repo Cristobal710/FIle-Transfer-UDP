@@ -19,14 +19,11 @@ def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
     for i in range (1, 11):
         # Enviar ACK del nombre del archivo
         writing_queue.put(((2).to_bytes(4, "big"), addr))
-        print(f">>> Server: envié ACK del nombre del archivo: {name}")
     
     if conexion_type == UPLOAD:
         
         # Delay para evitar que se mezclen paquetes del handshake con los de datos
-        print(f">>> Server: Iniciando delay de 1 segundo para {addr} (upload)")
         time.sleep(1.0)
-        print(f">>> Server: Delay completado para {addr}, iniciando upload_from_client_go_back_n")
         
         if protocol == STOP_AND_WAIT:
             upload_from_client(name, channel, writing_queue, addr, STOP_AND_WAIT, sock)
@@ -35,9 +32,7 @@ def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
     elif conexion_type == DOWNLOAD:
         
         # Delay para evitar que se mezclen paquetes del handshake con los de datos
-        print(f">>> Server: Iniciando delay de 1 segundo para {addr} (download)")
         time.sleep(1.0)
-        print(f">>> Server: Delay completado para {addr}, iniciando download_from_client_go_back_n")
         
         if protocol == STOP_AND_WAIT:
             download_from_client(name, writing_queue, addr, WINDOW_SIZE_SW, channel, ACK_TIMEOUT_SW)  # GBN con ventana de 1
@@ -50,9 +45,7 @@ def manage_writing(writing_queue: queue.Queue, sock: socket):
         while True:
             pkg, addr = writing_queue.get(block=True)
             sock.sendto(pkg, addr)
-            print(f">>> Server: envié paquete de {len(pkg)} bytes a {addr}")
     except Exception as e:
-        print(f">>> Server: Error en manage_writing: {e}")
         return
 
 
@@ -65,7 +58,6 @@ class Server:
         self.clients = {}
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((udp_ip, udp_port))
-        print(f"Server bound to {udp_ip}:{udp_port}")
         self.writing_queue = queue.Queue()
         self.writing_thread = None
 
@@ -77,32 +69,24 @@ class Server:
         while True:
             try:
                 pkg, addr = self.sock.recvfrom(1024)
-                print(f">>> Server: recibí paquete de {len(pkg)} bytes de {addr}")
                 if addr in self.clients:
                     queue_size = self.clients[addr][0].qsize()
-                    print(f">>> Server: Cola de {addr} tiene {queue_size} paquetes antes de agregar")
                     self.clients[addr][0].put(pkg)
                     queue_size_after = self.clients[addr][0].qsize()
-                    print(f">>> Server: Cola de {addr} tiene {queue_size_after} paquetes después de agregar")
                 else:
-                    print(f">>> Server: Cliente nuevo {addr}, iniciando thread")
                     self.start_client(pkg, addr, self.writing_queue)
             except ConnectionResetError:
-                print(">>> Server: Conexión reseteada por el cliente")
                 continue
             except socket.timeout:
                 continue
             except Exception as e:
-                print(f">>> Server: Error inesperado: {e}")
                 continue
 
     def start_client(self, msg, addr, writing_queue):
-        print(f">>> Server: start_client iniciando para {addr}")
         chan = queue.Queue()
         t = threading.Thread(target=manage_client, args=(chan, addr, self.sock, writing_queue))
         self.clients[addr] = [chan, t]
         chan.put(msg)
-        print(f">>> Server: Thread iniciado para {addr}, mensaje inicial: {len(msg)} bytes")
         t.start()
 
 
@@ -140,14 +124,15 @@ class ServerInterface:
             if self.server and self.server.sock:
                 self.server.sock.close()
 
-
 def main():
+    interactive_logger = setup_logging('file_transfer_server.interactive')
+    
     if len(sys.argv) < 2:
-        print("File Transfer Server")
-        print("Usage: python server.py start-server [options]")
-        print("Use -h for help with options")
+        interactive_logger.info("File Transfer Server")
+        interactive_logger.info("Usage: python server.py start-server [options]")
+        interactive_logger.info("Use -h for help with options")
         sys.exit(1)
-        
+    
     command = sys.argv[1]
     sys.argv = sys.argv[1:]
     
@@ -158,9 +143,10 @@ def main():
         args = parser.parse_args()
         interface.start_server(args)
         
+    
     else:
-        print(f"Unknown command: {command}")
-        print("Available commands: start-server")
+        interactive_logger.error(f"Unknown command: {command}")
+        interactive_logger.info("Available commands: start-server")
         sys.exit(1)
 
 

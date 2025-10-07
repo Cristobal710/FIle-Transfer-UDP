@@ -5,6 +5,7 @@ import argparse
 import logging
 import os
 import socket
+import sys
 
 from lib.constants import STOP_AND_WAIT, GO_BACK_N
 
@@ -20,15 +21,33 @@ def find_free_port():
     return port
 
 
+class ColoredFormatter(logging.Formatter):
+    """Formatter que añade colores a los logs"""
+    
+    COLORS = {
+        'DEBUG': '\033[36m',    # Cyan
+        'INFO': '\033[32m',     # Green  
+        'WARNING': '\033[33m',  # Yellow
+        'ERROR': '\033[31m',    # Red
+        'CRITICAL': '\033[35m', # Magenta
+    }
+    RESET = '\033[0m'
+    
+    def format(self, record):
+        log_color = self.COLORS.get(record.levelname, self.RESET)
+        record.levelname = f"{log_color}{record.levelname}{self.RESET}"
+        return super().format(record)
+
+
 def setup_logging(name, verbose=False, quiet=False):
     """
     Configura el sistema de logging para el cliente o servidor
     """
     if verbose and quiet:
-        raise argparse.ArgumentTypeError("Cannot specify both -v and -q")
+        raise ValueError("Cannot specify both -v and -q")
     
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
     
     if not logger.handlers:
         handler = logging.StreamHandler()
@@ -36,12 +55,29 @@ def setup_logging(name, verbose=False, quiet=False):
         handler.setFormatter(formatter)
         logger.addHandler(handler)
     
-    if verbose:
-        logger.setLevel(logging.DEBUG)
-    elif quiet:
-        logger.setLevel(logging.WARNING)
+    if quiet:
+        level = logging.WARNING
+    elif verbose:
+        level = logging.DEBUG
     else:
-        logger.setLevel(logging.INFO)
+        level = logging.INFO
+    
+    logger.setLevel(level)
+    
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(level)
+    
+    if verbose:
+        fmt = '%(asctime)s [%(levelname)s] %(name)s - %(message)s'
+        datefmt = '%H:%M:%S'
+    else:
+        fmt = '[%(levelname)s] %(message)s'
+        datefmt = None
+    
+    formatter = ColoredFormatter(fmt, datefmt=datefmt)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.propagate = False
     
     return logger
 
