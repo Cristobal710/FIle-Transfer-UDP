@@ -5,88 +5,88 @@
 -- Crear el protocolo
 local udp_file_transfer = Proto("udpft", "UDP File Transfer Protocol")
 
--- Definir los campos del protocolo para Stop-and-Wait
+-- Definir los campos del protocolo
 local fields = udp_file_transfer.fields
-fields.seq_num = ProtoField.uint8("udpft.seq_num", "Sequence Number", base.DEC, nil, 0x02)
-fields.flag_end = ProtoField.uint8("udpft.flag_end", "End Flag", base.DEC, {[0]="Data", [1]="End"}, 0x01)
+fields.flag_end = ProtoField.uint8("udpft.flag_end", "End Flag", base.DEC, {[0]="Data", [1]="Last"}, 0x01)
 fields.data_len = ProtoField.uint16("udpft.data_len", "Data Length", base.DEC)
-fields.data = ProtoField.bytes("udpft.data", "Data")
-
--- Campos adicionales para Go-Back-N
 fields.pkg_id = ProtoField.uint32("udpft.pkg_id", "Package ID", base.DEC)
-
--- Campo para ACKs
-fields.ack_num = ProtoField.uint8("udpft.ack_num", "ACK Number", base.DEC)
-
--- Campo para identificar el tipo de protocolo
-fields.protocol_type = ProtoField.string("udpft.protocol_type", "Protocol Type")
+fields.data = ProtoField.bytes("udpft.data", "Data")
+fields.ack_num = ProtoField.uint32("udpft.ack_num", "ACK Number", base.DEC)
+fields.handshake = ProtoField.string("udpft.handshake", "Handshake Data")
 
 -- Función para determinar si es un paquete de nuestro protocolo
 local function is_file_transfer_packet(buffer, pinfo)
-    -- Verificar puerto (ajustar según tus puertos)
+    -- Verificar puertos
     if pinfo.src_port == 5005 or pinfo.dst_port == 5005 or 
        pinfo.src_port == 5006 or pinfo.dst_port == 5006 then
         return true
     end
-    
-    -- Verificar longitud mínima
-    if buffer:len() < 1 then
-        return false
-    end
-    
-    -- Si es muy corto, probablemente es un ACK
-    if buffer:len() == 1 then
-        return true
-    end
-    
-    -- Verificar estructura básica
-    if buffer:len() >= 3 then
-        return true
-    end
-    
     return false
 end
 
--- Función para determinar el tipo de protocolo
-local function detect_protocol_type(buffer)
+-- Función para verificar si es texto ASCII imprimible
+local function is_printable_text(buffer)
+    local length = buffer:len()
+    if length == 0 or length > 256 then
+        return false
+    end
+    
+    local printable_count = 0
+    for i = 0, length - 1 do
+        local byte = buffer(i, 1):uint()
+        -- ASCII imprimible: 32-126, o newline/CR
+        if (byte >= 32 and byte <= 126) or byte == 10 or byte == 13 then
+            printable_count = printable_count + 1
+        end
+    end
+    
+    -- Si más del 90% son caracteres imprimibles, es texto
+    return printable_count > (length * 0.9)
+end
+
+-- Función para determinar el tipo de paquete
+local function detect_packet_type(buffer)
     local length = buffer:len()
     
-    -- ACK packets son de 1 byte
-    if length == 1 then
+    -- ACK: exactamente 4 bytes
+    if length == 4 then
         return "ACK"
     end
     
-    -- Handshake packets (texto plano)
-    if length > 3 then
-        local text = buffer(0, math.min(10, length)):string()
-        if text:match("UPLOAD") or text:match("DOWNLOAD") then
-            return "HANDSHAKE"
-        end
-        -- Verificar si parece un nombre de archivo
-        if text:match("%.") and not text:match("[%c%z]") then
-            return "HANDSHAKE"
-        end
-    end
-    
-    -- Stop-and-Wait: header de 3 bytes + datos
-    if length >= 3 then
-        local first_byte = buffer(0, 1):uint()
-        local data_len = buffer(1, 2):uint()
+    -- Handshake: texto corto (1-256 bytes) que contiene comandos o nombres de archivo
+    if length >= 1 and length <= 256 and is_printable_text(buffer) then
+        local text = buffer():string()
         
-        -- Para Stop-and-Wait, verificar si la longitud coincide
-        if length == 3 + data_len then
-            return "STOP_AND_WAIT"
+        -- Paso 1: U o D (1 byte)
+        if length == 1 and (text == "U" or text == "D") then
+            return "HANDSHAKE_TYPE"
         end
+        
+        -- Paso 2: SW o GBN (2-3 bytes)
+        if length <= 3 and (text == "SW" or text == "GBN") then
+            return "HANDSHAKE_PROTOCOL"
+        end
+        
+        -- Paso 3: nombre de archivo
+        if length > 3 then
+            return "HANDSHAKE_FILENAME"
+        end
+        
+        return "HANDSHAKE"
     end
     
-    -- Go-Back-N: header de 7 bytes + datos  
+    -- Paquetes de datos: header de 7 bytes + datos (0-1000 bytes)
     if length >= 7 then
-        local first_byte = buffer(0, 1):uint()
         local data_len = buffer(1, 2):uint()
         
-        -- Para Go-Back-N, verificar si la longitud coincide
+        -- Verificar si el tamaño coincide: 7 bytes header + data_len
         if length == 7 + data_len then
-            return "GO_BACK_N"
+            return "DATA"
+        end
+        
+        -- Si está cerca (tolerancia de ±10 bytes por red overhead), también aceptar
+        if math.abs(length - (7 + data_len)) <= 10 then
+            return "DATA"
         end
     end
     
@@ -108,44 +108,56 @@ function udp_file_transfer.dissector(buffer, pinfo, tree)
     -- Crear el árbol del protocolo
     local subtree = tree:add(udp_file_transfer, buffer(), "UDP File Transfer Protocol")
     
-    -- Detectar tipo de protocolo
-    local proto_type = detect_protocol_type(buffer)
-    subtree:add(fields.protocol_type, proto_type)
+    -- Detectar tipo de paquete
+    local pkt_type = detect_packet_type(buffer)
     
     -- Procesar según el tipo
-    if proto_type == "ACK" then
-        -- Paquete ACK (1 byte)
-        local ack_num = buffer(0, 1):uint()
-        subtree:add(fields.ack_num, buffer(0, 1))
+    if pkt_type == "ACK" then
+        -- Paquete ACK (4 bytes)
+        local ack_num = buffer(0, 4):uint()
+        subtree:add(fields.ack_num, buffer(0, 4))
         pinfo.cols.info = string.format("ACK %d", ack_num)
         
-    elseif proto_type == "HANDSHAKE" then
-        -- Paquete de handshake (texto plano)
+    elseif pkt_type == "HANDSHAKE_TYPE" then
+        -- Handshake paso 1: tipo de operación
         local text = buffer():string()
-        subtree:add("Handshake Data: " .. text)
-        pinfo.cols.info = "Handshake: " .. text
+        subtree:add(fields.handshake, buffer())
         
-    elseif proto_type == "STOP_AND_WAIT" then
-        -- Paquete Stop-and-Wait
-        local first_byte = buffer(0, 1):uint()
-        local seq_num = bit.band(bit.rshift(first_byte, 1), 1)
-        local flag_end = bit.band(first_byte, 1)
-        local data_len = buffer(1, 2):uint()
-        
-        subtree:add(fields.seq_num, buffer(0, 1))
-        subtree:add(fields.flag_end, buffer(0, 1))
-        subtree:add(fields.data_len, buffer(1, 2))
-        
-        if data_len > 0 and length > 3 then
-            subtree:add(fields.data, buffer(3, data_len))
+        if text == "U" then
+            pinfo.cols.info = "Handshake: Upload Request"
+        elseif text == "D" then
+            pinfo.cols.info = "Handshake: Download Request"
+        else
+            pinfo.cols.info = "Handshake: " .. text
         end
         
-        local info = string.format("Stop-and-Wait: Seq=%d, End=%d, Len=%d", 
-                                 seq_num, flag_end, data_len)
-        pinfo.cols.info = info
+    elseif pkt_type == "HANDSHAKE_PROTOCOL" then
+        -- Handshake paso 2: protocolo
+        local text = buffer():string()
+        subtree:add(fields.handshake, buffer())
         
-    elseif proto_type == "GO_BACK_N" then
-        -- Paquete Go-Back-N
+        if text == "SW" then
+            pinfo.cols.info = "Handshake: Stop-and-Wait Protocol"
+        elseif text == "GBN" then
+            pinfo.cols.info = "Handshake: Go-Back-N Protocol"
+        else
+            pinfo.cols.info = "Handshake: " .. text
+        end
+        
+    elseif pkt_type == "HANDSHAKE_FILENAME" then
+        -- Handshake paso 3: nombre de archivo
+        local text = buffer():string()
+        subtree:add(fields.handshake, buffer())
+        pinfo.cols.info = "Handshake: " .. text
+        
+    elseif pkt_type == "HANDSHAKE" then
+        -- Handshake genérico
+        local text = buffer():string()
+        subtree:add(fields.handshake, buffer())
+        pinfo.cols.info = "Handshake: " .. text
+        
+    elseif pkt_type == "DATA" then
+        -- Paquete de datos (7 bytes header + datos)
         local first_byte = buffer(0, 1):uint()
         local flag_end = bit.band(first_byte, 1)
         local data_len = buffer(1, 2):uint()
@@ -156,17 +168,20 @@ function udp_file_transfer.dissector(buffer, pinfo, tree)
         subtree:add(fields.pkg_id, buffer(3, 4))
         
         if data_len > 0 and length > 7 then
-            subtree:add(fields.data, buffer(7, data_len))
+            local actual_data_len = math.min(data_len, length - 7)
+            subtree:add(fields.data, buffer(7, actual_data_len))
         end
         
-        local info = string.format("Go-Back-N: ID=%d, End=%d, Len=%d", 
-                                 pkg_id, flag_end, data_len)
-        pinfo.cols.info = info
+        -- Determinar si es el último paquete
+        local pkt_status = (flag_end == 1) and "LAST" or "DATA"
+        
+        pinfo.cols.info = string.format("%s: ID=%d, Len=%d bytes", 
+                                        pkt_status, pkg_id, data_len)
         
     else
         -- Paquete desconocido
         subtree:add("Unknown packet format")
-        pinfo.cols.info = "Unknown UDP File Transfer packet"
+        pinfo.cols.info = string.format("Unknown packet (%d bytes)", length)
     end
     
     -- Indicar que consumimos todo el buffer
@@ -189,7 +204,7 @@ end)
 
 -- Información del plugin
 set_plugin_info({
-    version = "1.0.0",
+    version = "1.2.0",
     author = "UDP File Transfer Protocol Analyzer",
     description = "Dissector for custom UDP file transfer protocol supporting Stop-and-Wait and Go-Back-N"
 })
