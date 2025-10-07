@@ -40,9 +40,11 @@ for fname in sorted(os.listdir(pcap_dir)):
         continue
 
     # Captura con PyShark (solo paquetes UDP de tu puerto o protocolo)
-    with pyshark.FileCapture(path, display_filter="udp && udp.port==5005") as pcap:
+    with pyshark.FileCapture(
+        path, display_filter="udp && udp.port==5005"
+    ) as pcap:
         tiempos = []
-        bytes_totales = 5242880 
+        bytes_totales = 5242880
 
         for pkt in pcap:
             # Filtrar solo tus paquetes personalizados (UDPFT_CUSTOM)
@@ -57,7 +59,6 @@ for fname in sorted(os.listdir(pcap_dir)):
 
     throughput = (bytes_totales / 1024 / duracion) if duracion > 0 else 0
 
-
     role, protocolo = roles[host_id]
     resultados.append({
         "host": host_id,
@@ -70,7 +71,10 @@ for fname in sorted(os.listdir(pcap_dir)):
 
 # === GUARDAR CSV ===
 with open(out_csv, "w", newline="") as csvf:
-    writer = csv.DictWriter(csvf, fieldnames=["host", "rol", "protocolo", "duracion_s", "bytes", "throughput_kib_s"])
+    fieldnames = [
+        "host", "rol", "protocolo", "duracion_s", "bytes", "throughput_kib_s"
+    ]
+    writer = csv.DictWriter(csvf, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(resultados)
 
@@ -81,7 +85,9 @@ df = pd.DataFrame(resultados)
 
 # Duración media por protocolo
 plt.figure()
-df.groupby("protocolo")["duracion_s"].mean().plot(kind="bar", yerr=df.groupby("protocolo")["duracion_s"].std())
+df.groupby("protocolo")["duracion_s"].mean().plot(
+    kind="bar", yerr=df.groupby("protocolo")["duracion_s"].std()
+)
 plt.ylabel("Segundos")
 plt.title("Duración media por protocolo")
 plt.tight_layout()
@@ -89,9 +95,10 @@ plt.savefig(os.path.join(metricas_dir, "duracion_comparacion.png"))
 
 # Throughput medio por protocolo
 plt.figure()
-df.groupby("protocolo")["throughput_kib_s"].mean().plot(kind="bar", yerr=df.groupby("protocolo")["throughput_kib_s"].std())
+df.groupby("protocolo")["throughput_kib_s"].mean().plot(
+    kind="bar", yerr=df.groupby("protocolo")["throughput_kib_s"].std()
+)
 plt.ylabel("KiB/s")
 plt.title("Throughput medio por protocolo")
 plt.tight_layout()
 plt.savefig(os.path.join(metricas_dir, "throughput_comparacion.png"))
-
