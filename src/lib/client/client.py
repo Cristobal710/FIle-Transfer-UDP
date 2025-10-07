@@ -39,7 +39,7 @@ class FileTransferInterface:
             server_addr = (args.host, args.port)
             
             # Handshake
-            handshake(self.sock, args.name, UPLOAD, protocol, server_addr)
+            handshake(self.sock, args.name, UPLOAD, protocol, server_addr, args.verbose, args.quiet)
             
             # Crear archivo sender
             arch = ArchiveSender(source_path)
@@ -47,9 +47,9 @@ class FileTransferInterface:
             
             # Usar el protocolo especificado
             if protocol == "SW":
-                upload(self.sock, arch, end, WINDOW_SIZE_SW, server_addr, ACK_TIMEOUT_SW)  # GBN con ventana de 1
+                upload(self.sock, arch, end, WINDOW_SIZE_SW, server_addr, ACK_TIMEOUT_SW, args.verbose, args.quiet)
             elif protocol == "GBN":
-                upload(self.sock, arch, end, WINDOW_SIZE_GBN, server_addr, ACK_TIMEOUT_GBN)
+                upload(self.sock, arch, end, WINDOW_SIZE_GBN, server_addr, ACK_TIMEOUT_GBN, args.verbose, args.quiet)
                 
             self.logger.info("Upload completed successfully")
             
@@ -74,7 +74,7 @@ class FileTransferInterface:
             server_addr = (args.host, args.port)
             
             # Handshake
-            handshake(self.sock, args.name, DOWNLOAD, protocol, server_addr)
+            handshake(self.sock, args.name, DOWNLOAD, protocol, server_addr, args.verbose, args.quiet)
             
             # Crear archivo receiver
             arch = ArchiveRecv(args.dst)
@@ -82,9 +82,9 @@ class FileTransferInterface:
             
             # Usar el protocolo especificado
             if protocol == STOP_AND_WAIT:
-                download(self.sock, arch, server_addr, ACK_TIMEOUT_SW)  # GBN con ventana de 1
+                download(self.sock, arch, server_addr, ACK_TIMEOUT_SW, args.verbose, args.quiet) #GBN CON VENTANA DE 1
             elif protocol == GO_BACK_N:
-                download(self.sock, arch, server_addr, ACK_TIMEOUT_GBN)
+                download(self.sock, arch, server_addr, ACK_TIMEOUT_GBN, args.verbose, args.quiet)
                     
             self.logger.info("Download completed successfully")
             
@@ -99,22 +99,25 @@ class FileTransferInterface:
 
 
 def main():
+    # Logger para el modo interactivo
+    interactive_logger = setup_logging('file_transfer.interactive')
+
     if len(sys.argv) < 2:
-        print("File Transfer Client")
-        print("Available commands: upload, download")
-        print("Use -h for help with each command")
-        print()
-        
+        interactive_logger.info("File Transfer Client")
+        interactive_logger.info("Comandos disponibles: upload, download")
+        interactive_logger.info("Usar -h para ayuda en cada comando")
+        interactive_logger.info("")
+
         interface = FileTransferInterface()
-        
+
         while True:
             try:
-                command_input = input("Enter command (or 'quit' to exit): ").strip().split()
-                
+                command_input = input("Ingrese un comando (o 'quit' para salir): ").strip().split()
+
                 if not command_input or command_input[0] == 'quit':
-                    print("Goodbye!")
+                    interactive_logger.info("Hasta Luego!")
                     break
-                    
+
                 command = command_input[0]
                 
                 if command == 'upload':
@@ -132,16 +135,16 @@ def main():
                         interface.download_file(args)
                     except SystemExit:
                         pass
-                        
+
                 else:
-                    print(f"Unknown command: {command}")
-                    print("Available commands: upload, download")
-                    
+                    interactive_logger.warning(f"Comando desconocido: {command}")
+                    interactive_logger.info("Comandos validos: upload, download")
+
             except KeyboardInterrupt:
-                print("\nGoodbye!")
+                interactive_logger.info("\nHasta Luego!")
                 break
             except Exception as e:
-                print(f"Error: {e}")
+                interactive_logger.error(f"Error: {e}")
     else:
         command = sys.argv[1]
         sys.argv = sys.argv[1:]
@@ -157,10 +160,10 @@ def main():
             parser = create_download_parser()
             args = parser.parse_args()
             interface.download_file(args)
-            
+
         else:
-            print(f"Unknown command: {command}")
-            print("Available commands: upload, download")
+            interface.logger.error(f"Comando desconocido: {command}")
+            interface.logger.info("Comandos validos: upload, download")
             sys.exit(1)
 
 
