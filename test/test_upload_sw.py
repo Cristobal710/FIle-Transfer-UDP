@@ -51,12 +51,14 @@ def start_network():
     time.sleep(2)
     # Copiar archivo de prueba a los hosts de upload
     h2.cmd(f'cp {test_file_path} /tmp/test.png')
-    
     # Verificar que el archivo se copió correctamente
     h2.cmd('ls -la /tmp/test.png')
-    
     # Ejecutar comando de upload
-    h2.cmd(f'xterm -hold -e "cd {client_path}; python3 client.py upload -s /tmp/test.png -n uploadsw.png -r SW -H 10.0.0.1 -p 5000 -v; bash" &')
+    h2.cmd(
+        f'xterm -hold -e "cd {client_path}; python3 client.py '
+        f'upload -s /tmp/test.png -n uploadsw.png -r SW -H 10.0.0.1 '
+        f'-p 5000 -v; bash" &'
+    )
 
     CLI(net)
     h1.cmd("killall xterm")

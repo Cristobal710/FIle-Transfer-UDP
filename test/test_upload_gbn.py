@@ -59,7 +59,8 @@ def start_network():
     h2.cmd(
         f'xterm -hold -e "cd {client_path}; python3 '
         f'client.py upload -s /tmp/test.png -n uploadgbn.png -r GBN '
-        f'-H 10.0.0.1 -p 5005 -v 2>&1 | tee {logs_dir}/client_upload_gbn.log; bash" &'
+        f'-H 10.0.0.1 -p 5005 -v 2>&1 | tee '
+        f'{logs_dir}/client_upload_gbn.log; bash" &'
     )
 
     CLI(net)

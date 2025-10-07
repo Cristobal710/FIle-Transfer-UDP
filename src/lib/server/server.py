@@ -35,7 +35,8 @@ def manage_client(
     if conexion_type == UPLOAD:
         # Delay para evitar que se mezclen paquetes del handshake con los
         # de datos
-        # print(f">>> Server: Iniciando delay de 1 segundo para {addr} (upload)")
+        # print(f">>> Server: Iniciando delay de 1 segundo para {addr} "
+        #       f"(upload)")
         time.sleep(1.0)
         # print(f">>> Server: Delay completado para {addr}, "
         #       f"iniciando upload_from_client_go_back_n")
@@ -50,7 +51,8 @@ def manage_client(
     elif conexion_type == DOWNLOAD:
         # Delay para evitar que se mezclen paquetes del handshake con los
         # de datos
-        # print(f">>> Server: Iniciando delay de 1 segundo para {addr} (download)")
+        # print(f">>> Server: Iniciando delay de 1 segundo para {addr} "
+        #       f"(download)")
         time.sleep(1.0)
         # print(f">>> Server: Delay completado para {addr}, "
         #       f"iniciando download_from_client_go_back_n")
@@ -149,7 +151,9 @@ class ServerInterface:
                 args.host, args.port, args.storage, args.verbose,
                 args.quiet
             )
-            self.logger.info("Server started successfully. Press Ctrl+C to stop.")
+            self.logger.info(
+                "Server started successfully. Press Ctrl+C to stop."
+            )
             self.logger.info("Waiting for connections...")
             # Iniciar servidor
             self.server._start_writing_thread()

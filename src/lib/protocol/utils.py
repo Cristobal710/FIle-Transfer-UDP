@@ -166,7 +166,7 @@ def create_upload_parser():
     parser = argparse.ArgumentParser(
         prog='upload',
         description='Send a file to the server to be saved with the '
-                   'assigned name'
+                    'assigned name'
     )
 
     parser = create_common_parser_args(parser)

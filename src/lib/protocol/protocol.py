@@ -405,8 +405,8 @@ def upload(sock: socket, arch: ArchiveSender, end, window_sz, server_addr,
                         if pkg_id_num < ack_num:
                             to_remove.append(pkg_id_bytes_key)
                             logger.debug(
-                                f">>> Cliente: Removiendo paquete {pkg_id_num} "
-                                f"de la ventana"
+                                f">>> Cliente: Removiendo paquete "
+                                f"{pkg_id_num} de la ventana"
                             )
                     for pkg_id_bytes_key in to_remove:
                         del pkgs_not_ack[pkg_id_bytes_key]
@@ -477,7 +477,9 @@ def upload(sock: socket, arch: ArchiveSender, end, window_sz, server_addr,
                         )
                         packets_to_remove.append(pkg_id_bytes_key)
                     else:
-                        packets_to_retry.append((pkg_id_bytes_key, value, pkg_num))
+                        packets_to_retry.append(
+                            (pkg_id_bytes_key, value, pkg_num)
+                        )
                         pkg_retry_count[pkg_num] = retry_count + 1
 
                 # Remover paquetes que alcanzaron el límite
@@ -534,12 +536,13 @@ def download(sock: socket, arch: ArchiveRecv, server_addr, timeout,
             # Verificar que el paquete viene del servidor correcto
             if recv_addr != server_addr:
                 logger.warning(
-                    f">>> Cliente: Paquete de dirección incorrecta {recv_addr} "
-                    f"(esperaba {server_addr}), ignorando..."
+                    f">>> Cliente: Paquete de dirección incorrecta "
+                    f"{recv_addr} (esperaba {server_addr}), ignorando..."
                 )
                 continue
 
-            # Filtrar paquetes que no son del protocolo de datos (menos de 7 bytes)
+            # Filtrar paquetes que no son del protocolo de datos
+            # (menos de 7 bytes)
             if len(pkg) < 7:
                 logger.warning(
                     f">>> Cliente: Recibí paquete no válido del protocolo "
@@ -566,7 +569,8 @@ def download(sock: socket, arch: ArchiveRecv, server_addr, timeout,
         if pkg_id == expected_pkg_id:
             if flag_end == 1:
                 logger.info(
-                    ">>> Cliente: Transferencia finalizada (paquete END recibido)"
+                    ">>> Cliente: Transferencia finalizada "
+                    "(paquete END recibido)"
                 )
                 work_done = True
                 # Enviar ACK para el paquete END
@@ -582,7 +586,8 @@ def download(sock: socket, arch: ArchiveRecv, server_addr, timeout,
                 if (data_len != -1):
                     # Paquete en orden, procesar y enviar ACK
                     logger.debug(
-                        f">>> Cliente: Paquete en orden, escribiendo {data_len} bytes"
+                        f">>> Cliente: Paquete en orden, escribiendo "
+                        f"{data_len} bytes"
                     )
                     arch.write_data(data)
                     sock.sendto(pkg_id.to_bytes(4, "big"), server_addr)
