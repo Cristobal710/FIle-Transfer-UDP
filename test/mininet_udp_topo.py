@@ -99,11 +99,6 @@ def start_network():
     h3.cmd("killall xterm")
     h4.cmd("killall xterm")
     h5.cmd("killall xterm")
-    tcpdump_h1.terminate()
-    tcpdump_h2.terminate()
-    tcpdump_h3.terminate()
-    tcpdump_h4.terminate()
-    tcpdump_h5.terminate()
     
     print(f"Logs guardados en: {logs_dir}/")
     print(f"Capturas guardadas en: {wireshark_dir}/")
