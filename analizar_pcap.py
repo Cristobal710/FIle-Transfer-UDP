@@ -42,14 +42,13 @@ for fname in sorted(os.listdir(pcap_dir)):
     # Captura con PyShark (solo paquetes UDP de tu puerto o protocolo)
     with pyshark.FileCapture(path, display_filter="udp && udp.port==5005") as pcap:
         tiempos = []
-        bytes_totales = 0
+        bytes_totales = 5242880 
 
         for pkt in pcap:
             # Filtrar solo tus paquetes personalizados (UDPFT_CUSTOM)
-            if "UDPFT_CUSTOM" not in pkt.highest_layer:
+            if "UDPFT" not in pkt.highest_layer:
                 continue
             tiempos.append(float(pkt.sniff_timestamp))
-            bytes_totales += int(pkt.length)
 
         if tiempos:
             duracion = max(tiempos) - min(tiempos)
