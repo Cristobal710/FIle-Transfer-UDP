@@ -37,7 +37,6 @@ def start_network():
     if not os.path.exists(logs_dir):
         os.makedirs(logs_dir)
 
-    print(base_path)
 
     # Start tcpdump on server (h1)
     tcpdump_h1 = h1.popen(f"tcpdump -i h1-eth0 udp -w {wireshark_dir}/h1_capture.pcap")
@@ -55,9 +54,7 @@ def start_network():
     # Usar rutas absolutas para los comandos
     server_path = os.path.join(base_path, "src/lib", "server")
     client_path = os.path.join(base_path, "src/lib", "client")
-    
-    print(server_path)
-    print(client_path)
+
 
     # Copiar archivo de prueba al servidor
     test_file_path = os.path.join(base_path, "test.png")

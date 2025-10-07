@@ -182,56 +182,31 @@ def upload_from_client(name, channel, writing_queue: queue.Queue, addr, protocol
             print(f">>> Server: Timeout esperando paquetes de {addr}")
             break
         
-        flag_end, data_len, pkg_id, data = arch.recv_pckg_go_back_n(pkg)
+        flag_end, _, pkg_id, data = arch.recv_pckg_go_back_n(pkg)
         
         print(f">>> Server: recibí paquete flag_end={flag_end}, pkg_id={pkg_id}, esperado={expected_pkg_id}")
         
-        if pkg_id == expected_pkg_id:
-            arch.archivo.write(data)
-            arch.archivo.flush()
-            
-            # Comportamiento diferenciado por protocolo para el último paquete
-            ack_data = (pkg_id+1).to_bytes(4, "big")
-            if flag_end == 1:
-                if protocol == STOP_AND_WAIT:
-                    # SW: Envío directo para evitar condiciones de carrera
-                    sock.sendto(ack_data, addr)
-                    print(f">>> Server: SW - envié ACK{pkg_id+1} FINAL directamente a {addr}")
-                else:
-                    # GBN: Usar cola + delay (funciona mejor con ventana deslizante)
-                    writing_queue.put((ack_data, addr))
-                    print(f">>> Server: GBN - envié ACK{pkg_id+1} FINAL por cola a {addr}")
-            else:
-                writing_queue.put((ack_data, addr))
-                print(f">>> Server: envié ACK{pkg_id+1} a {addr}")
-            
-            expected_pkg_id += 1
-        else:
-            # Comportamiento diferente según protocolo
-            if protocol == STOP_AND_WAIT:
-                # Stop-and-Wait: reenviar el último ACK válido (expected_pkg_id)
-                writing_queue.put((expected_pkg_id.to_bytes(4, "big"), addr))
-                print(f">>> Server: SW - paquete fuera de orden pkg_id={pkg_id}, reenvío ACK{expected_pkg_id}")
-            else:
-                # Go-Back-N: ACK del último paquete recibido en orden (expected_pkg_id - 1)
-                if expected_pkg_id > 0:
-                    writing_queue.put(((expected_pkg_id-1).to_bytes(4, "big"), addr))
-                    print(f">>> Server: GBN - paquete fuera de orden pkg_id={pkg_id}, reenvío ACK{expected_pkg_id-1}")
-                else:
-                    # No enviamos ACK si aún no hemos recibido ningún paquete en orden
-                    print(f">>> Server: GBN - paquete fuera de orden pkg_id={pkg_id}, no hay paquetes previos para ACK")
+        
 
-        if flag_end == 1:
-            print(f">>> Server: paquete final recibido (flag_end=1), pkg_id={pkg_id}")
-            
-            # Delay solo para Go-Back-N (SW ya envió directo)
-            if protocol != STOP_AND_WAIT:
-                time.sleep(0.02)  # 20ms para asegurar envío del ACK final en GBN
-                print(f">>> Server: GBN - delay completado para envío final")
-            
-            print(f">>> Server: finalizando transfer para {addr}")
-            work_done = True
-            break
+        if pkg_id == expected_pkg_id:
+            if flag_end == 1:
+                print(f">>> Server: paquete final recibido (flag_end=1), pkg_id={pkg_id}")
+                ack_data = (pkg_id+1).to_bytes(4, "big")
+                for i in range(1, 11):
+                    writing_queue.put((ack_data, addr))
+                
+                print(f">>> Server: finalizando transfer para {addr}")
+                work_done = True
+            else:
+                arch.write_data(data)
+                ack_data = (pkg_id+1).to_bytes(4, "big")
+                writing_queue.put((ack_data, addr))
+                expected_pkg_id += 1
+        else:
+            writing_queue.put((expected_pkg_id.to_bytes(4, "big"), addr))
+          
+
+        
     
     # Cerrar archivo al terminar
     arch.archivo.close()
@@ -350,7 +325,7 @@ def upload(sock: socket, arch: ArchiveSender, end, window_sz, server_addr, timeo
             
             print(f">>> Cliente: Recibí ACK: {pkg} de {recv_addr}")
             value = int.from_bytes(pkg, "big")
-            if len(pkg) == 4 and value != -1:
+            if len(pkg) == 4:
                 ack_num = int.from_bytes(pkg, "big")
                 print(f">>> Cliente: Procesando ACK {ack_num} (bytes: {pkg})")
                 if ack_num > last_ack:
@@ -453,21 +428,22 @@ def download(sock: socket, arch: ArchiveRecv, server_addr, timeout):
         flag_end, data_len, pkg_id, data = arch.recv_pckg_go_back_n(pkg)
         print(f">>> Cliente: Procesando paquete - flag_end={flag_end}, pkg_id={pkg_id}, expected_pkg_id={expected_pkg_id}, data_len={data_len}")
 
-        if flag_end == 1:
-            print(">>> Cliente: Transferencia finalizada (paquete END recibido)")
-            work_done = True
-            # Enviar ACK para el paquete END
-            sock.sendto(pkg_id.to_bytes(4, "big"), server_addr)  # ACK de 4 bytes
-            print(f">>> Cliente: Envié ACK final para paquete END {pkg_id}")
-            break
-
         if pkg_id == expected_pkg_id:
-            # Paquete en orden, procesar y enviar ACK
-            print(f">>> Cliente: Paquete en orden, escribiendo {data_len} bytes")
-            arch.write_data(data)
-            sock.sendto(pkg_id.to_bytes(4, "big"), server_addr)
-            print(f">>> Cliente: Envié ACK{pkg_id} para paquete en orden")
-            expected_pkg_id += 1
+            if flag_end == 1:
+                print(">>> Cliente: Transferencia finalizada (paquete END recibido)")
+                work_done = True
+                # Enviar ACK para el paquete END
+                for i in range(1,11):
+                    sock.sendto(pkg_id.to_bytes(4, "big"), server_addr)  # ACK de 4 bytes
+                print(f">>> Cliente: Envié ACK final para paquete END {pkg_id}")
+            
+            else:
+                # Paquete en orden, procesar y enviar ACK
+                print(f">>> Cliente: Paquete en orden, escribiendo {data_len} bytes")
+                arch.write_data(data)
+                sock.sendto(pkg_id.to_bytes(4, "big"), server_addr)
+                print(f">>> Cliente: Envié ACK{pkg_id} para paquete en orden")
+                expected_pkg_id += 1
         else:
             # Paquete fuera de orden, enviar ACK del último paquete correcto
             if expected_pkg_id > 0:
@@ -476,6 +452,10 @@ def download(sock: socket, arch: ArchiveRecv, server_addr, timeout):
                 last_ack = 0  # Si es el primer paquete y está fuera de orden
             sock.sendto(last_ack.to_bytes(4, "big"), server_addr)
             print(f">>> Cliente: Paquete fuera de orden (recibí {pkg_id}, esperaba {expected_pkg_id}), reenvío ACK{last_ack}")
+        
+        
+
+       
     
     print(">>> Cliente: cerrando archivo...")
     arch.archivo.close()
