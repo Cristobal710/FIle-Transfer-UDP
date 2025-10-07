@@ -1,0 +1,5 @@
+host,rol,protocolo,duracion_s,bytes,throughput_kib_s
+h2,upload,SW,63.325,7034566,108.484
+h3,upload,GBN,30.673,12054929,383.798
+h4,download,SW,60.781,6325875,101.638
+h5,download,GBN,30.167,10854841,351.394
