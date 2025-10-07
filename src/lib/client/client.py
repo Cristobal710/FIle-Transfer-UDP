@@ -15,7 +15,8 @@ class FileTransferInterface:
     def __init__(self):
         self.logger = setup_logging('file_transfer')
         self.sock = None
-        
+    
+    # ✅ IMPORTANTE: Este método debe estar al mismo nivel de indentación que __init__
     def _setup_socket(self, host, port):
         if self.sock:
             self.sock.close()
@@ -23,11 +24,12 @@ class FileTransferInterface:
         self.sock, self.target_addr = setup_client_socket(host, port)
         self.logger.debug(f"Socket bound to {self.sock.getsockname()}")
         self.logger.debug(f"Target server: {host}:{port}")
-        
+    
+    # ✅ Este también debe estar al mismo nivel
     def upload_file(self, args):
         try:
             self.logger = setup_logging('file_transfer', args.verbose, args.quiet)
-            self._setup_socket(args.host, args.port)
+            self._setup_socket(args.host, args.port)  # <-- Aquí se llama
             
             source_path = validate_file_path(args.src)
             protocol = validate_protocol(args.protocol)
@@ -35,21 +37,17 @@ class FileTransferInterface:
             self.logger.info(f"Starting upload: {source_path} -> {args.name}")
             self.logger.debug(f"Protocol: {protocol}")
             
-            # Crear dirección del servidor
             server_addr = (args.host, args.port)
             
-            # Handshake
-            handshake(self.sock, args.name, UPLOAD, protocol, server_addr)
+            handshake(self.sock, args.name, UPLOAD, protocol, server_addr, args.verbose, args.quiet)
             
-            # Crear archivo sender
             arch = ArchiveSender(source_path)
             end = False
             
-            # Usar el protocolo especificado
             if protocol == "SW":
-                upload(self.sock, arch, end, WINDOW_SIZE_SW, server_addr, ACK_TIMEOUT_SW)  # GBN con ventana de 1
+                upload(self.sock, arch, end, WINDOW_SIZE_SW, server_addr, ACK_TIMEOUT_SW, args.verbose, args.quiet)
             elif protocol == "GBN":
-                upload(self.sock, arch, end, WINDOW_SIZE_GBN, server_addr, ACK_TIMEOUT_GBN)
+                upload(self.sock, arch, end, WINDOW_SIZE_GBN, server_addr, ACK_TIMEOUT_GBN, args.verbose, args.quiet)
                 
             self.logger.info("Upload completed successfully")
             
@@ -59,32 +57,29 @@ class FileTransferInterface:
         finally:
             if self.sock:
                 self.sock.close()
-                
+    
+    # ✅ Este también debe estar al mismo nivel            
     def download_file(self, args):
         try:
             self.logger = setup_logging('file_transfer', args.verbose, args.quiet)
-            self._setup_socket(args.host, args.port)
+            self._setup_socket(args.host, args.port)  # <-- Aquí se llama
             
             protocol = validate_protocol(args.protocol)
             
             self.logger.info(f"Starting download: {args.name} -> {args.dst}")
             self.logger.debug(f"Protocol: {protocol}")
             
-            # Crear dirección del servidor
             server_addr = (args.host, args.port)
             
-            # Handshake
-            handshake(self.sock, args.name, DOWNLOAD, protocol, server_addr)
+            handshake(self.sock, args.name, DOWNLOAD, protocol, server_addr, args.verbose, args.quiet)
             
-            # Crear archivo receiver
             arch = ArchiveRecv(args.dst)
             end = False
             
-            # Usar el protocolo especificado
             if protocol == STOP_AND_WAIT:
-                download(self.sock, arch, server_addr, ACK_TIMEOUT_SW)  # GBN con ventana de 1
+                download(self.sock, arch, server_addr, ACK_TIMEOUT_SW, args.verbose, args.quiet)
             elif protocol == GO_BACK_N:
-                download(self.sock, arch, server_addr, ACK_TIMEOUT_GBN)
+                download(self.sock, arch, server_addr, ACK_TIMEOUT_GBN, args.verbose, args.quiet)
                     
             self.logger.info("Download completed successfully")
             

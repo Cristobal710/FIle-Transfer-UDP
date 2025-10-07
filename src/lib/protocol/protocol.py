@@ -48,7 +48,8 @@ def handshake_server(channel: queue.Queue, addr, writing_queue, verbose=False, q
             name = channel.get(block=True, timeout=2.0)
             logger.debug(f"Recibí name de {addr}")
         except queue.Empty:
-            logger.warning(f"Timeout esperando name de {addr}")
+            queue_size = channel.qsize()
+            logger.warning(f"Timeout esperando name de {addr}, cola tiene {queue_size} paquetes")
             return
 
         # Reenviar ACK si el cliente reenvía el mismo paquete
@@ -118,7 +119,11 @@ def download_from_client(name, writing_queue: queue.Queue, addr, window_sz, chan
         logger.debug(f"Terminé de enviar los paquetes, tengo que esperar ACK. Paquetes sin ACK: {len(pkgs_not_ack)}")
         
         try:
+            queue_size_before = channel.qsize()
+            logger.debug(f"Cola de ACKs tiene {queue_size_before} paquetes antes de esperar ACK")
             pkg = channel.get(block=True, timeout=timeout)
+            queue_size_after = channel.qsize()
+            logger.debug(f"Cola de {addr} tiene {queue_size_after} paquetes después de recibir ACK")
             logger.debug(f"ACK recibido: {pkg}")
             if len(pkg) == 4:
                 ack_num = int.from_bytes(pkg, "big")
@@ -138,17 +143,7 @@ def download_from_client(name, writing_queue: queue.Queue, addr, window_sz, chan
                 # Si terminamos el archivo y no hay paquetes sin confirmar, salir
                 if file_finished and not pkgs_not_ack:
                     logger.debug("Esperando confirmación final...")
-                    try:
-                        pkg = channel.get(block=True, timeout=timeout)
-                        if len(pkg) == 4:
-                            ack_num = int.from_bytes(pkg, "big")
-                            if ack_num >= pkg_id - 1:
-                                logger.info("Confirmación final recibida, finalizando transferencia")
-                                end = True
-                    except queue.Empty:
-                        logger.warning("Timeout esperando confirmación final, pero cerrando igualmente")
-                        end = True
-
+                    end = True
 
 
         except queue.Empty:
@@ -202,16 +197,16 @@ def upload_from_client(name, channel, writing_queue: queue.Queue, addr, protocol
             # IMPORTANTE: En ambos protocolos, ACK = pkg_id recibido
             # Esto confirma "recibí correctamente el paquete N"
             ack_data = (pkg_id + 1).to_bytes(4, "big")
-            logger.debug(f"{protocol} - enviando ACK{pkg_id} (paquete recibido correctamente)")
             
             # Enviar ACK
             if flag_end == 1:
                 if protocol == STOP_AND_WAIT:
                     # SW: Envío directo para evitar condiciones de carrera
                     sock.sendto(ack_data, addr)
-                logger.info(f"Enviado ACK FINAL directamente a {addr}: ACK{pkg_id + 1}")
+                    logger.info(f">>> Server: SW - Enviado ACK FINAL directamente a {addr}: ACK{pkg_id + 1}")
             else:
                 writing_queue.put((ack_data, addr))
+                logger.debug(f">>> Server: Enviado ACK{pkg_id + 1} a {addr}")
             
             expected_pkg_id += 1
         else:
@@ -396,11 +391,11 @@ def upload(sock: socket, arch: ArchiveSender, end, window_sz, server_addr, timeo
 
         sock.settimeout(None)
         
-        # Verificar timeout global
+        """# Verificar timeout global
         if time.time() - transfer_start_time >= max_transfer_time:
             logger.error(f"Timeout global: transfer excedió {max_transfer_time}s")
             raise Exception("Transfer timeout")
-        
+        """
         # Si pasó el timeout de esta ventana
         if time.time() - start_time >= timeout:
             logger.warning(f">>> Cliente: Timeout esperando ACKs - file_finished={file_finished}, pkgs_not_ack={len(pkgs_not_ack)}")

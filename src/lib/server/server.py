@@ -12,32 +12,33 @@ from lib.constants import (
 from lib.protocol.protocol import handshake_server, download_from_client, upload_from_client
 from lib.protocol.utils import setup_logging, create_server_parser
 
-def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue):
+def manage_client(channel: queue.Queue, addr, sock: socket, writing_queue, verbose=False, quiet=False):
     
-    conexion_type, protocol, name = handshake_server(channel, addr, writing_queue)
+    # ✅ Pasar verbose y quiet
+    conexion_type, protocol, name = handshake_server(channel, addr, writing_queue, verbose, quiet)
 
     for i in range (1, 11):
-        # Enviar ACK del nombre del archivo
         writing_queue.put(((2).to_bytes(4, "big"), addr))
     
     if conexion_type == UPLOAD:
-        
-        # Delay para evitar que se mezclen paquetes del handshake con los de datos
         time.sleep(1.0)
         
         if protocol == STOP_AND_WAIT:
-            upload_from_client(name, channel, writing_queue, addr, STOP_AND_WAIT, sock)
+            # ✅ Pasar verbose y quiet
+            upload_from_client(name, channel, writing_queue, addr, STOP_AND_WAIT, sock, verbose, quiet)
         elif protocol == GO_BACK_N:
-            upload_from_client(name, channel, writing_queue, addr, GO_BACK_N, sock)
+            # ✅ Pasar verbose y quiet
+            upload_from_client(name, channel, writing_queue, addr, GO_BACK_N, sock, verbose, quiet)
     elif conexion_type == DOWNLOAD:
-        
-        # Delay para evitar que se mezclen paquetes del handshake con los de datos
         time.sleep(1.0)
         
         if protocol == STOP_AND_WAIT:
-            download_from_client(name, writing_queue, addr, WINDOW_SIZE_SW, channel, ACK_TIMEOUT_SW)  # GBN con ventana de 1
+            # ✅ Pasar verbose y quiet
+            download_from_client(name, writing_queue, addr, WINDOW_SIZE_SW, channel, ACK_TIMEOUT_SW, verbose, quiet)
         elif protocol == GO_BACK_N:
-            download_from_client(name, writing_queue, addr, WINDOW_SIZE_GBN, channel, ACK_TIMEOUT_GBN)
+            # ✅ Pasar verbose y quiet
+            download_from_client(name, writing_queue, addr, WINDOW_SIZE_GBN, channel, ACK_TIMEOUT_GBN, verbose, quiet)
+
     
 
 def manage_writing(writing_queue: queue.Queue, sock: socket):
@@ -52,9 +53,11 @@ def manage_writing(writing_queue: queue.Queue, sock: socket):
 
 
 class Server:
-    def __init__(self, udp_ip, udp_port, path):
+    def __init__(self, udp_ip, udp_port, path, verbose=False, quiet=False):
         self.udp_ip = udp_ip
         self.udp_port = udp_port
+        self.verbose = verbose  # ✅ Guardar flags
+        self.quiet = quiet      # ✅ Guardar flags
         self.clients = {}
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((udp_ip, udp_port))
@@ -84,7 +87,7 @@ class Server:
 
     def start_client(self, msg, addr, writing_queue):
         chan = queue.Queue()
-        t = threading.Thread(target=manage_client, args=(chan, addr, self.sock, writing_queue))
+        t = threading.Thread(target=manage_client, args=(chan, addr, self.sock, writing_queue, self.verbose, self.quiet))
         self.clients[addr] = [chan, t]
         chan.put(msg)
         t.start()
@@ -102,16 +105,14 @@ class ServerInterface:
             self.logger.info(f"Starting server on {args.host}:{args.port}")
             self.logger.debug(f"Storage path: {args.storage}")
             
-            # Crear directorio de almacenamiento si no existe
             os.makedirs(args.storage, exist_ok=True)
             
-            # Crear servidor
-            self.server = Server(args.host, args.port, args.storage)
+            # ✅ Pasar verbose y quiet al crear el servidor
+            self.server = Server(args.host, args.port, args.storage, args.verbose, args.quiet)
             
             self.logger.info("Server started successfully. Press Ctrl+C to stop.")
             self.logger.info("Waiting for connections...")
             
-            # Iniciar servidor
             self.server._start_writing_thread()
             self.server._listen()
             
